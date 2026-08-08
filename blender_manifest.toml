@@ -1,0 +1,13 @@
+schema_version = "1.0.0"
+
+id = "mr_bean_3df_importer"
+version = "0.1.0"
+name = "Mr. Bean 3DF Importer"
+tagline = "Import 3DF scenes from the Mr. Bean game"
+maintainer = "jmancoder"
+type = "add-on"
+tags = ["Import-Export", "Mesh"]
+blender_version_min = "4.2.0"
+license = [
+  "SPDX:GPL-3.0-or-later",
+]
