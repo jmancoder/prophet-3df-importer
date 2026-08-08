@@ -47,7 +47,7 @@ class FaceGroup3DF(NamedTuple):
 class SceneData3DF(NamedTuple):
     nodes: list[Node3DF]
     meshes: list[MeshData3DF]
-    
+
 
 def create_vertex_dtype(bitmask: int) -> npt.DTypeLike:
     fields = []
@@ -69,14 +69,15 @@ def create_vertex_dtype(bitmask: int) -> npt.DTypeLike:
     if bitmask & 0x20:
         fields.append(("color", np.uint8, 4))
 
-    tex_count = 0
+    uv_count = 0
     if bitmask & 0x100:
-        tex_count = 1
+        uv_count = 1
     if bitmask & 0x200:
-        tex_count = 2
+        uv_count = 2
     if bitmask & 0x400:
-        tex_count = 3
-    fields.append((f"uvs", np.float32, (tex_count, 2)))
+        uv_count = 3
+    if uv_count > 0:
+        fields.append((f"uvs", np.float32, (uv_count, 2)))
 
     return np.dtype(fields)
 
@@ -225,6 +226,7 @@ def import_3df(scene_data: SceneData3DF, context: Context) -> None:
     for mesh_3df in scene_data.meshes:
         mesh_node = scene_data.nodes[mesh_3df.node_id]
 
+        # Skip meshes without vertex positions
         if mesh_3df.vertices.dtype.names is None:
             continue
         if "position" not in mesh_3df.vertices.dtype.names:
@@ -239,12 +241,11 @@ def import_3df(scene_data: SceneData3DF, context: Context) -> None:
         )
 
         # Import vertex UV layers
-        for i in range(3):
-            uv_field_name = f"uv_{i}"
-            if uv_field_name in mesh_3df.vertices.dtype.names:
+        if "uvs" in mesh_3df.vertices.dtype.names:
+            for i in range(mesh_3df.vertices.dtype["uvs"].shape[0]):
                 uv_layer = mesh.uv_layers.new(name=f"UV{i}")
                 for loop in mesh.loops:
-                    uv = mesh_3df.vertices[uv_field_name][loop.vertex_index]
+                    uv = mesh_3df.vertices["uvs"][loop.vertex_index][i]
                     uv_layer.data[loop.index].uv = (uv[0], 1.0 - uv[1])
 
         # Import vertex normals

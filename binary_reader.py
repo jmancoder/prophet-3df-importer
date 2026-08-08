@@ -21,7 +21,7 @@ class BinaryReader(BytesIO):
     def read_uint8(self) -> int:
         return int.from_bytes(self.read(1), signed=False,
                               byteorder=self.byte_order)
-    
+
     def read_int8(self) -> int:
         return int.from_bytes(self.read(1), signed=True,
                               byteorder=self.byte_order)
