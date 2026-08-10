@@ -10,6 +10,13 @@ import numpy.typing as npt
 from .binary_reader import BinaryReader
 
 
+class Material3DF(NamedTuple):
+    name: str
+    unk_count: int
+    unk_off: int
+    flags: int
+
+
 @dataclass
 class Node3DF:
     name: str
@@ -110,12 +117,29 @@ def parse_3df(data: bytes) -> SceneData3DF:
     bs.seek(0x98)
     texture_section_size = bs.read_uint32()
     bs.seek(0x120)
-    surface_count = bs.read_uint32()
-    surfaces_off = bs.read_uint32()
+    material_count = bs.read_uint32()
+    materials_off = bs.read_uint32()
     bs.read_uint32()
     bs.read_uint32()
     node_count = bs.read_uint32()
     nodes_off = bs.read_uint32()
+
+    # Read materials
+    bs.seek(materials_off)
+    materials: list[Material3DF] = []
+    for _ in range(material_count):
+        material_name = bs.read_string_block(16)
+        bs.read_uint32()
+        unk_count = bs.read_uint32()
+        unk_off = bs.read_uint32()
+        material_flags = bs.read_uint32()
+
+        materials.append(Material3DF(
+            material_name,
+            unk_count,
+            unk_off,
+            material_flags,
+        ))
 
     # Partially read nodes
     nodes: list[Node3DF] = []
