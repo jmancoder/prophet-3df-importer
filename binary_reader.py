@@ -42,8 +42,8 @@ class BinaryReader(BytesIO):
         return int.from_bytes(self.read(4), signed=True,
                               byteorder=self.byte_order)
 
-    def read_vec3i(self) -> tuple[int, int, int]:
-        return struct.unpack(self.endian_symbol + "3i", self.read(12))
+    def read_vec3I(self) -> tuple[int, int, int]:
+        return struct.unpack(self.endian_symbol + "3I", self.read(12))
 
     def read_float(self) -> float:
         return struct.unpack(self.endian_symbol + "f", self.read(4))[0]

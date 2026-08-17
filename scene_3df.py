@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from io import BufferedReader
 from typing import NamedTuple
 
 import bpy
@@ -10,30 +11,62 @@ import numpy.typing as npt
 from .binary_reader import BinaryReader
 
 
+HEADER_SIZE = 412
+
+
+class Header3DF(NamedTuple):
+    unk_int_0: int
+    unk_int_1: int
+    compress_mode: int
+    nodes_chunk_size: int
+    meshes_chunk_size: int
+    textures_chunk_size: int
+    materials_count: int
+    materials_off: int
+    unk_int_2: int
+    unk_int_3: int
+    nodes_count: int
+    nodes_off: int
+
+
 class Material3DF(NamedTuple):
     name: str
+    flags_a: int
     unk_count: int
     unk_off: int
-    flags: int
+    flags_b: int
 
 
-@dataclass
+class FaceGroup3DF(NamedTuple):
+    face_type: int
+    face_idx_count: int
+    face_flags: int
+
+
+@dataclass(frozen=True, slots=True)
 class Node3DF:
     name: str
     type_id: int
     transform_type: int
 
 
-@dataclass
+@dataclass(frozen=True, slots=True)
+class BoneNode3DF(Node3DF):
+    unk_float: float
+    unk_matrix: Matrix
+
+
+@dataclass(frozen=True, slots=True)
 class MeshNode3DF(Node3DF):
-    face_groups_off: int
     vertex_count: int
     face_idx_count: int
-    face_group_count: int
+    face_groups: list[FaceGroup3DF]
 
 
 class MeshInfo3DF(NamedTuple):
     vertex_bitmask: int
+    unk_int: int
+    unk_float: float
     vertices_off: int
     faces_off: int
     transform: Matrix
@@ -43,12 +76,6 @@ class MeshData3DF(NamedTuple):
     node_id: int
     vertices: npt.NDArray
     triangles: list[tuple[int, int, int]]
-
-
-class FaceGroup3DF(NamedTuple):
-    face_type: int
-    face_idx_count: int
-    face_flags: int
 
 
 class SceneData3DF(NamedTuple):
@@ -104,107 +131,189 @@ def tri_strips_to_triangles(indices: list[int]) -> list[tuple[int, int, int]]:
     return triangles
 
 
-def parse_3df(data: bytes) -> SceneData3DF:
-    bs = BinaryReader(data)
+def read_mesh_info(bs: BinaryReader) -> MeshInfo3DF:
+    vertex_bitmask = bs.read_uint32()
+    unk_int = bs.read_uint32()
+    unk_float = bs.read_float()
+    vertices_off = bs.read_uint32()
+    faces_off = bs.read_uint32()
+    mesh_transform = bs.read_mat43()
 
-    # Read header
-    sig = bs.read_string_block(4)
-    if sig != "3df":
-        raise ValueError("Missing 3df file signature")
-    bs.seek(0x14)
-    node_section_size = bs.read_uint32()
-    mesh_section_size = bs.read_uint32()
-    bs.seek(0x98)
-    texture_section_size = bs.read_uint32()
-    bs.seek(0x120)
-    material_count = bs.read_uint32()
-    materials_off = bs.read_uint32()
-    bs.read_uint32()
-    bs.read_uint32()
-    node_count = bs.read_uint32()
-    nodes_off = bs.read_uint32()
+    return MeshInfo3DF(
+        vertex_bitmask,
+        unk_int,
+        unk_float,
+        vertices_off,
+        faces_off,
+        mesh_transform,
+    )
 
-    # Read materials
-    bs.seek(materials_off)
-    materials: list[Material3DF] = []
-    for _ in range(material_count):
-        material_name = bs.read_string_block(16)
-        bs.read_uint32()
-        unk_count = bs.read_uint32()
-        unk_off = bs.read_uint32()
-        material_flags = bs.read_uint32()
 
-        materials.append(Material3DF(
-            material_name,
-            unk_count,
-            unk_off,
-            material_flags,
-        ))
+def read_face_group(bs: BinaryReader) -> FaceGroup3DF:
+    face_type = bs.read_uint16()
+    face_count = bs.read_uint16()
+    face_flags = bs.read_uint32()
+    bs.seek(8, 1)
 
-    # Partially read nodes
-    nodes: list[Node3DF] = []
-    bs.seek(nodes_off)
-    for _ in range(node_count):
-        node_name = bs.read_string_block(16)
-        node_type = bs.read_uint32()
-        bs.seek(60, 1)
-        transform_type = bs.read_uint32()
-        bs.seek(148, 1)
-        face_groups_off = bs.read_uint32()
-        bs.seek(32, 1)
+    return FaceGroup3DF(
+        face_type,
+        face_count,
+        face_flags,
+    )
+
+
+def read_node(bs: BinaryReader) -> Node3DF:
+    node_name = bs.read_string_block(16)
+    node_type = bs.read_uint32()
+    bs.seek(60, 1)
+    transform_type = bs.read_uint32()
+    bs.seek(148, 1)
+    face_groups_off = bs.read_uint32()
+    bs.seek(32, 1)
+
+    if face_groups_off > 0:
         vertex_count = bs.read_uint32()
         face_idx_count = bs.read_uint32()
-        face_group_count = bs.read_uint32()
+        face_groups_count = bs.read_uint32()
         bs.seek(92, 1)
+        next_node_off = bs.tell()
 
-        nodes.append(MeshNode3DF(
+        # Read face groups
+        bs.seek(face_groups_off - HEADER_SIZE)
+        face_groups = [
+            read_face_group(bs)
+            for _ in range(face_groups_count)
+        ]
+
+        bs.seek(next_node_off)
+
+        return MeshNode3DF(
             node_name,
             node_type,
             transform_type,
-            face_groups_off,
             vertex_count,
             face_idx_count,
-            face_group_count,
-        ))
+            face_groups,
+        )
+    else:
+        unk_float = bs.read_float()
+        unk_matrix = bs.read_mat43()
+        bs.seek(52, 1)
 
-    # Read node-paired mesh info entries
-    mesh_info_entries: list[MeshInfo3DF] = []
-    mesh_section_off = 0x19C + node_section_size
-    bs.seek(mesh_section_off)
-    for _ in range(node_count):
-        vertex_bitmask = bs.read_uint32()
-        bs.read_uint32()
-        bs.read_float()
-        vertices_off = bs.read_uint32() + mesh_section_off
-        faces_off = bs.read_uint32() + mesh_section_off
-        mesh_transform = bs.read_mat43()
+        return BoneNode3DF(
+            node_name,
+            node_type,
+            transform_type,
+            unk_float,
+            unk_matrix,
+        )
 
-        mesh_info_entries.append(MeshInfo3DF(
-            vertex_bitmask,
-            vertices_off,
-            faces_off,
-            mesh_transform,
-        ))
+
+def read_material(bs: BinaryReader) -> Material3DF:
+    name = bs.read_string_block(16)
+    flags_a = bs.read_uint32()
+    unk_count = bs.read_uint32()
+    unk_off = bs.read_uint32()
+    flags_b = bs.read_uint32()
+    bs.read_uint32()
+    bs.read_float()
+    bs.read_int32()
+    bs.read_int32()
+    bs.read_int32()
+    bs.read_int32()
+
+    return Material3DF(
+        name,
+        flags_a,
+        unk_count,
+        unk_off,
+        flags_b,
+    )
+
+
+def read_header(bs: BinaryReader) -> Header3DF:
+    unk_int_0 = bs.read_uint32()
+    unk_int_1 = bs.read_uint32()
+    compress_mode = bs.read_uint32()
+    nodes_chunk_size = bs.read_uint32()
+    meshes_chunk_size = bs.read_uint32()
+    bs.seek(0x98)
+    textures_chunk_size = bs.read_uint32()
+    bs.seek(0x120)
+    materials_count = bs.read_uint32()
+    materials_off = bs.read_uint32()
+    unk_int_2 = bs.read_uint32()
+    unk_int_3 = bs.read_uint32()
+    nodes_count = bs.read_uint32()
+    nodes_off = bs.read_uint32()
+
+    return Header3DF(
+        unk_int_0,
+        unk_int_1,
+        compress_mode,
+        nodes_chunk_size,
+        meshes_chunk_size,
+        textures_chunk_size,
+        materials_count,
+        materials_off,
+        unk_int_2,
+        unk_int_3,
+        nodes_count,
+        nodes_off,
+    )
+
+
+def read_3df(f: BufferedReader) -> SceneData3DF:
+    # Load header chunk
+    bs = BinaryReader(b"\x00" * 412)
+    f.readinto(bs.getbuffer())
+
+    # Validate signature
+    sig = bs.read_string_block(4)
+    if sig != "3df":
+        raise ValueError("Missing 3df file signature")
+
+    version = bs.read_uint32()
+    if version != 26:
+        raise NotImplementedError(f"Unimplemented 3DA version {version}")
+
+    # Read header
+    header = read_header(bs)
+
+    # Load nodes chunk
+    bs = BinaryReader(b"\x00" * header.nodes_chunk_size)
+    f.readinto(bs.getbuffer())
+
+    # Read materials
+    bs.seek(header.materials_off - HEADER_SIZE)
+    materials = [
+        read_material(bs)
+        for _ in range(header.materials_count)
+    ]
+
+    # Read nodes
+    bs.seek(header.nodes_off - HEADER_SIZE)
+    nodes = [
+        read_node(bs)
+        for _ in range(header.nodes_count)
+    ]
+
+    # Load mesh chunk
+    bs = BinaryReader(b"\x00" * header.meshes_chunk_size)
+    f.seek(HEADER_SIZE + header.nodes_chunk_size)
+    f.readinto(bs.getbuffer())
+
+    # Read mesh info entries
+    mesh_info_entries = [
+        read_mesh_info(bs)
+        for _ in range(header.nodes_count)
+    ]
 
     # Read meshes
     meshes: list[MeshData3DF] = []
     for i, (node, mesh_info) in enumerate(zip(nodes, mesh_info_entries)):
         if mesh_info.vertex_bitmask == 0 or not isinstance(node, MeshNode3DF):
             continue
-
-        # Read face groups
-        face_groups: list[FaceGroup3DF] = []
-        bs.seek(node.face_groups_off)
-        for _ in range(node.face_group_count):
-            face_type = bs.read_uint16()
-            face_count = bs.read_uint16()
-            face_flags = bs.read_uint32()
-            bs.seek(8, 1)
-            face_groups.append(FaceGroup3DF(
-                face_type,
-                face_count,
-                face_flags,
-            ))
 
         # Read vertices
         bs.seek(mesh_info.vertices_off)
@@ -218,11 +327,11 @@ def parse_3df(data: bytes) -> SceneData3DF:
         # Read faces
         triangles: list[tuple[int, int, int]] = []
         bs.seek(mesh_info.faces_off)
-        for face_group in face_groups:
+        for face_group in node.face_groups:
             if face_group.face_type == 3:
                 # Read triangles
                 triangles.extend([
-                    bs.read_vec3i()
+                    bs.read_vec3I()
                     for _ in range(face_group.face_idx_count // 3)
                 ])
             elif face_group.face_type == 1:

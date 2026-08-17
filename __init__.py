@@ -34,7 +34,7 @@ class IMPORT_OT_SCENE_3df(Operator, ImportHelper):
     def execute(self, context: Context):
         in_path = Path(self.filepath)
         with open(in_path, "rb") as f:
-            scene_data = scene_3df.parse_3df(f.read())
+            scene_data = scene_3df.read_3df(f)
         scene_3df.import_3df(scene_data, context)
 
         return {'FINISHED'}
