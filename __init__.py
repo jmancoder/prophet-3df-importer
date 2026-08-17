@@ -20,8 +20,8 @@ from . import scene_3df
 
 
 class IMPORT_OT_SCENE_3df(Operator, ImportHelper):
-    """Load a 3DF scene from Mr. Bean."""
-    bl_idname = "import_mesh.scene_3df"
+    """Load a 3DF scene."""
+    bl_idname = "import_scene.prophet_3df"
     bl_label = "Import 3DF"
     filename_ext = ".3df"
 
@@ -42,7 +42,7 @@ class IMPORT_OT_SCENE_3df(Operator, ImportHelper):
 
 def menu_func_import(self, context):
     self.layout.operator(IMPORT_OT_SCENE_3df.bl_idname,
-                         text="Mr. Bean Scene (.3df)")
+                         text="Prophet 3DF (.3df)")
 
 
 def register():
