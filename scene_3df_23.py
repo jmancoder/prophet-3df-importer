@@ -1,16 +1,7 @@
 from typing import NamedTuple
 
-from mathutils import Matrix
-
 from .binary_reader import BinaryReader
-
-
-class MeshInfo3DF(NamedTuple):
-    vertex_bitmask: int
-    unk_int: int
-    unk_float: float
-    vertices_off: int
-    faces_off: int
+from . import scene_3df_22
 
 
 class Header3DF(NamedTuple):
@@ -29,20 +20,51 @@ class Header3DF(NamedTuple):
     nodes_off: int
 
 
-def read_mesh_info(bs: BinaryReader) -> MeshInfo3DF:
-    vertex_bitmask = bs.read_uint32()
-    unk_int = bs.read_uint32()
-    unk_float = bs.read_float()
-    vertices_off = bs.read_uint32()
-    faces_off = bs.read_uint32()
+def read_node(bs: BinaryReader) -> scene_3df_22.Node3DF:
+    node_name = bs.read_string_block(16)
+    node_type = bs.read_uint32()
+    bs.seek(60, 1)
+    transform_type = bs.read_uint32()
+    bs.seek(148, 1)
+    face_groups_off = bs.read_uint32()
+    bs.seek(32, 1)
 
-    return MeshInfo3DF(
-        vertex_bitmask,
-        unk_int,
-        unk_float,
-        vertices_off,
-        faces_off,
-    )
+    if face_groups_off > 0:
+        vertex_count = bs.read_uint32()
+        face_idx_count = bs.read_uint32()
+        face_groups_count = bs.read_uint32()
+        bs.seek(92, 1)
+        next_node_off = bs.tell()
+
+        # Read face groups
+        bs.seek(face_groups_off - scene_3df_22.HEADER_SIZE)
+        face_groups = [
+            scene_3df_22.read_face_group(bs)
+            for _ in range(face_groups_count)
+        ]
+
+        bs.seek(next_node_off)
+
+        return scene_3df_22.MeshNode3DF(
+            node_name,
+            node_type,
+            transform_type,
+            vertex_count,
+            face_idx_count,
+            face_groups,
+        )
+    else:
+        unk_float = bs.read_float()
+        unk_matrix = bs.read_mat43()
+        bs.seek(52, 1)
+
+        return scene_3df_22.BoneNode3DF(
+            node_name,
+            node_type,
+            transform_type,
+            unk_float,
+            unk_matrix,
+        )
 
 
 def read_header(bs: BinaryReader) -> Header3DF:

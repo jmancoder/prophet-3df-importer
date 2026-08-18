@@ -1,56 +1,16 @@
-from dataclasses import dataclass
 from io import BufferedReader
 from typing import NamedTuple
 import zlib
 
 import bpy
 from bpy.types import Context
-from mathutils import Matrix
 import numpy as np
 import numpy.typing as npt
 
 from .binary_reader import BinaryReader
-from . import home_alone_3df
-from . import mr_bean_3df
-
-
-HEADER_SIZE = 412
-HOME_ALONE_VERSIONS = (22, 23)
-MR_BEAN_VERSION = 26
-
-
-class Material3DF(NamedTuple):
-    name: str
-    flags_a: int
-    unk_count: int
-    unk_off: int
-    flags_b: int
-
-
-class FaceGroup3DF(NamedTuple):
-    face_type: int
-    face_idx_count: int
-    face_flags: int
-
-
-@dataclass(frozen=True, slots=True)
-class Node3DF:
-    name: str
-    type_id: int
-    transform_type: int
-
-
-@dataclass(frozen=True, slots=True)
-class BoneNode3DF(Node3DF):
-    unk_float: float
-    unk_matrix: Matrix
-
-
-@dataclass(frozen=True, slots=True)
-class MeshNode3DF(Node3DF):
-    vertex_count: int
-    face_idx_count: int
-    face_groups: list[FaceGroup3DF]
+from . import scene_3df_22
+from . import scene_3df_23
+from . import scene_3df_26
 
 
 class MeshData3DF(NamedTuple):
@@ -60,7 +20,7 @@ class MeshData3DF(NamedTuple):
 
 
 class SceneData3DF(NamedTuple):
-    nodes: list[Node3DF]
+    nodes: list[scene_3df_22.Node3DF]
     meshes: list[MeshData3DF]
 
 
@@ -112,88 +72,6 @@ def tri_strips_to_triangles(indices: list[int]) -> list[tuple[int, int, int]]:
     return triangles
 
 
-def read_face_group(bs: BinaryReader) -> FaceGroup3DF:
-    face_type = bs.read_uint16()
-    face_count = bs.read_uint16()
-    face_flags = bs.read_uint32()
-    bs.seek(8, 1)
-
-    return FaceGroup3DF(
-        face_type,
-        face_count,
-        face_flags,
-    )
-
-
-def read_node(bs: BinaryReader) -> Node3DF:
-    node_name = bs.read_string_block(16)
-    node_type = bs.read_uint32()
-    bs.seek(60, 1)
-    transform_type = bs.read_uint32()
-    bs.seek(148, 1)
-    face_groups_off = bs.read_uint32()
-    bs.seek(32, 1)
-
-    if face_groups_off > 0:
-        vertex_count = bs.read_uint32()
-        face_idx_count = bs.read_uint32()
-        face_groups_count = bs.read_uint32()
-        bs.seek(92, 1)
-        next_node_off = bs.tell()
-
-        # Read face groups
-        bs.seek(face_groups_off - HEADER_SIZE)
-        face_groups = [
-            read_face_group(bs)
-            for _ in range(face_groups_count)
-        ]
-
-        bs.seek(next_node_off)
-
-        return MeshNode3DF(
-            node_name,
-            node_type,
-            transform_type,
-            vertex_count,
-            face_idx_count,
-            face_groups,
-        )
-    else:
-        unk_float = bs.read_float()
-        unk_matrix = bs.read_mat43()
-        bs.seek(52, 1)
-
-        return BoneNode3DF(
-            node_name,
-            node_type,
-            transform_type,
-            unk_float,
-            unk_matrix,
-        )
-
-
-def read_material(bs: BinaryReader) -> Material3DF:
-    name = bs.read_string_block(16)
-    flags_a = bs.read_uint32()
-    unk_count = bs.read_uint32()
-    unk_off = bs.read_uint32()
-    flags_b = bs.read_uint32()
-    bs.read_uint32()
-    bs.read_float()
-    bs.read_int32()
-    bs.read_int32()
-    bs.read_int32()
-    bs.read_int32()
-
-    return Material3DF(
-        name,
-        flags_a,
-        unk_count,
-        unk_off,
-        flags_b,
-    )
-
-
 def decompress_chunk_stream(bs: BinaryReader) -> BinaryReader:
     decomp_size = bs.read_uint32()
     comp_size = bs.read_uint32()
@@ -228,10 +106,10 @@ def read_3df(f: BufferedReader) -> SceneData3DF:
 
     # Read version-specific header
     version = bs.read_uint32()
-    if version in HOME_ALONE_VERSIONS:
-        header = home_alone_3df.read_header(bs)
-    elif version == MR_BEAN_VERSION:
-        header = mr_bean_3df.read_header(bs)
+    if version == 22 or version == 23:
+        header = scene_3df_23.read_header(bs)
+    elif version == 26:
+        header = scene_3df_26.read_header(bs)
     else:
         raise NotImplementedError(f"Unimplemented 3DF version {version}")
 
@@ -242,42 +120,49 @@ def read_3df(f: BufferedReader) -> SceneData3DF:
         bs = decompress_chunk_stream(bs)
 
     # Read materials
-    bs.seek(header.materials_off - HEADER_SIZE)
+    bs.seek(header.materials_off - scene_3df_22.HEADER_SIZE)
     materials = [
-        read_material(bs)
+        scene_3df_22.read_material(bs)
         for _ in range(header.materials_count)
     ]
 
     # Read nodes
-    bs.seek(header.nodes_off - HEADER_SIZE)
-    nodes = [
-        read_node(bs)
-        for _ in range(header.nodes_count)
-    ]
+    bs.seek(header.nodes_off - scene_3df_22.HEADER_SIZE)
+    if version == 22:
+        nodes = [
+            scene_3df_22.read_node(bs)
+            for _ in range(header.nodes_count)
+        ]
+    else:
+        nodes = [
+            scene_3df_23.read_node(bs)
+            for _ in range(header.nodes_count)
+        ]
 
     # Load mesh chunk
     bs = BinaryReader(b"\x00" * header.meshes_chunk_size)
-    f.seek(HEADER_SIZE + header.nodes_chunk_size)
+    f.seek(scene_3df_22.HEADER_SIZE + header.nodes_chunk_size)
     f.readinto(bs.getbuffer())
     if header.compress_mode == 1:
         bs = decompress_chunk_stream(bs)
 
     # Read mesh info entries
-    if version in HOME_ALONE_VERSIONS:
+    if version == 22 or version == 23:
         mesh_info_entries = [
-            home_alone_3df.read_mesh_info(bs)
+            scene_3df_22.read_mesh_info(bs)
             for _ in range(header.nodes_count)
         ]
     else:
         mesh_info_entries = [
-            mr_bean_3df.read_mesh_info(bs)
+            scene_3df_26.read_mesh_info(bs)
             for _ in range(header.nodes_count)
         ]
 
     # Read meshes
     meshes: list[MeshData3DF] = []
     for i, (node, mesh_info) in enumerate(zip(nodes, mesh_info_entries)):
-        if mesh_info.vertex_bitmask == 0 or not isinstance(node, MeshNode3DF):
+        if (mesh_info.vertex_bitmask == 0 or not isinstance(
+                node, scene_3df_22.MeshNode3DF)):
             continue
 
         # Read vertices
@@ -295,7 +180,7 @@ def read_3df(f: BufferedReader) -> SceneData3DF:
         for face_group in node.face_groups:
             if face_group.face_type == 3:
                 # Read triangles
-                if version in HOME_ALONE_VERSIONS:
+                if version == 22 or version == 23:
                     triangles.extend([
                         bs.read_vec3H()
                         for _ in range(face_group.face_idx_count // 3)
@@ -307,7 +192,7 @@ def read_3df(f: BufferedReader) -> SceneData3DF:
                     ])
             elif face_group.face_type == 1:
                 # Read triangle strips
-                if version in HOME_ALONE_VERSIONS:
+                if version == 22 or version == 23:
                     tri_strip_indices = [
                         bs.read_uint16()
                         for _ in range(face_group.face_idx_count)
