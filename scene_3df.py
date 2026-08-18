@@ -15,7 +15,7 @@ from . import mr_bean_3df
 
 
 HEADER_SIZE = 412
-HOME_ALONE_VERSION = 23
+HOME_ALONE_VERSIONS = (22, 23)
 MR_BEAN_VERSION = 26
 
 
@@ -228,12 +228,12 @@ def read_3df(f: BufferedReader) -> SceneData3DF:
 
     # Read version-specific header
     version = bs.read_uint32()
-    if version == HOME_ALONE_VERSION:
+    if version in HOME_ALONE_VERSIONS:
         header = home_alone_3df.read_header(bs)
     elif version == MR_BEAN_VERSION:
         header = mr_bean_3df.read_header(bs)
     else:
-        raise NotImplementedError(f"Unimplemented 3DA version {version}")
+        raise NotImplementedError(f"Unimplemented 3DF version {version}")
 
     # Load nodes chunk
     bs = BinaryReader(b"\x00" * header.nodes_chunk_size)
@@ -263,7 +263,7 @@ def read_3df(f: BufferedReader) -> SceneData3DF:
         bs = decompress_chunk_stream(bs)
 
     # Read mesh info entries
-    if version == HOME_ALONE_VERSION:
+    if version in HOME_ALONE_VERSIONS:
         mesh_info_entries = [
             home_alone_3df.read_mesh_info(bs)
             for _ in range(header.nodes_count)
@@ -295,7 +295,7 @@ def read_3df(f: BufferedReader) -> SceneData3DF:
         for face_group in node.face_groups:
             if face_group.face_type == 3:
                 # Read triangles
-                if version == HOME_ALONE_VERSION:
+                if version in HOME_ALONE_VERSIONS:
                     triangles.extend([
                         bs.read_vec3H()
                         for _ in range(face_group.face_idx_count // 3)
@@ -307,7 +307,7 @@ def read_3df(f: BufferedReader) -> SceneData3DF:
                     ])
             elif face_group.face_type == 1:
                 # Read triangle strips
-                if version == HOME_ALONE_VERSION:
+                if version in HOME_ALONE_VERSIONS:
                     tri_strip_indices = [
                         bs.read_uint16()
                         for _ in range(face_group.face_idx_count)
