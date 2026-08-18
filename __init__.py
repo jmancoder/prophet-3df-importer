@@ -27,7 +27,7 @@ class IMPORT_OT_SCENE_3df(Operator, ImportHelper):
 
     filter_glob: StringProperty(
         default="*.3df",
-        options={'HIDDEN'},
+        options={"HIDDEN"},
         maxlen=255,
     )
 
@@ -37,7 +37,7 @@ class IMPORT_OT_SCENE_3df(Operator, ImportHelper):
             scene_data = scene_3df.read_3df(f)
         scene_3df.import_3df(scene_data, context)
 
-        return {'FINISHED'}
+        return {"FINISHED"}
 
 
 def menu_func_import(self, context):

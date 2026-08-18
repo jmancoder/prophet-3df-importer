@@ -253,8 +253,8 @@ def import_3df(scene_data: SceneData3DF, context: Context) -> None:
         if "color" in mesh_3df.vertices.dtype.names:
             vertex_color_attr = mesh.color_attributes.new(
                 name="vertex_color",
-                type='BYTE_COLOR',
-                domain='POINT',
+                type="BYTE_COLOR",
+                domain="POINT",
             )
             vertex_color_attr.data.foreach_set(
                 "color",
