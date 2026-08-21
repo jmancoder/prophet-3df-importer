@@ -7,14 +7,21 @@ This Blender add-on allows you to import 3DF scene files from certain [Prophet](
 3. Click **File->Import->Prophet 3DF (.3df)**, select a .3df file, and click **Import 3DF**.
 
 ## Tested games
-- Mr. Bean [PC]
+- Agent Hugo: Lemoon Twist [PC]
+- Agent Hugo: Hula Holiday [PC]
+- Cue Academy - Snooker, Pool, Billiards [PS2]
 - Home Alone [PS2]
-- Wacky Races: Mad Motors [PS2]
+- Mr. Bean [PC]
+- RealPlay Pool [PS2]
+- RealPlay PuzzleSphere [PS2]
+- RealPlay Racing [PS2]
 - The Flintstones: Bedrock Racing [PS2]
+- Wacky Races: Mad Motors [PS2]
+- Yamaha Supercross [PC]
 
 ## TODO
-- Import and apply textures
+- Test on more games and platforms
 - Import node transforms
 - Import non-mesh nodes
 - Import and skin bones
-- Test on more games and platforms
+- Import and apply textures
