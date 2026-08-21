@@ -28,6 +28,7 @@ class FaceGroup3DF(NamedTuple):
 class Node3DF:
     name: str
     type_id: int
+    parent_id: int
     transform_type: int
 
 
@@ -84,7 +85,17 @@ def read_face_group(bs: BinaryReader) -> FaceGroup3DF:
 def read_node(bs: BinaryReader) -> Node3DF:
     node_name = bs.read_string_block(16)
     node_type = bs.read_uint32()
-    bs.seek(60, 1)
+    bs.read_int32()
+    bs.read_int32()
+    bs.read_int32()
+    parent_id = bs.read_int32()
+    unk_ints_off = bs.read_uint32()
+    bs.read_int32()
+    bounds_min = bs.read_vec3f()
+    bounds_max = bs.read_vec3f()
+    unk_floats_off = bs.read_uint32()
+    bs.read_int32()
+    bs.read_int32()
     transform_type = bs.read_uint32()
     bs.seek(148, 1)
     face_groups_off = bs.read_uint32()
@@ -109,6 +120,7 @@ def read_node(bs: BinaryReader) -> Node3DF:
         return MeshNode3DF(
             node_name,
             node_type,
+            parent_id,
             transform_type,
             vertex_count,
             face_idx_count,
@@ -122,6 +134,7 @@ def read_node(bs: BinaryReader) -> Node3DF:
         return BoneNode3DF(
             node_name,
             node_type,
+            parent_id,
             transform_type,
             unk_float,
             unk_matrix,

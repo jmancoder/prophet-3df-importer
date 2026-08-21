@@ -3,7 +3,7 @@ from typing import NamedTuple
 import zlib
 
 import bpy
-from bpy.types import Context
+from bpy.types import Context, Object
 import numpy as np
 import numpy.typing as npt
 
@@ -14,14 +14,13 @@ from . import scene_3df_26
 
 
 class MeshData3DF(NamedTuple):
-    node_id: int
     vertices: npt.NDArray
     triangles: list[tuple[int, int, int]]
 
 
 class SceneData3DF(NamedTuple):
     nodes: list[scene_3df_22.Node3DF]
-    meshes: list[MeshData3DF]
+    meshes: dict[int, MeshData3DF]
 
 
 def create_vertex_dtype(bitmask: int) -> npt.DTypeLike:
@@ -159,7 +158,7 @@ def read_3df(f: BufferedReader) -> SceneData3DF:
         ]
 
     # Read meshes
-    meshes: list[MeshData3DF] = []
+    mesh_data_map: dict[int, MeshData3DF] = {}
     for i, (node, mesh_info) in enumerate(zip(nodes, mesh_info_entries)):
         if (mesh_info.vertex_bitmask == 0 or not isinstance(
                 node, scene_3df_22.MeshNode3DF)):
@@ -207,64 +206,93 @@ def read_3df(f: BufferedReader) -> SceneData3DF:
                 print("WARNING: Unimplemented face type "
                       + str(face_group.face_type))
 
-        meshes.append(MeshData3DF(
-            i,
+        mesh_data_map[i] = MeshData3DF(
             vertices,
             triangles,
-        ))
+        )
 
-    return SceneData3DF(nodes, meshes)
+    return SceneData3DF(nodes, mesh_data_map)
+
+
+def import_empty_object(context: Context, node: scene_3df_22.Node3DF) -> Object:
+    node_obj = bpy.data.objects.new(node.name, None)
+    context.collection.objects.link(node_obj)
+
+    return node_obj
+
+
+def import_mesh_object(context: Context, node: scene_3df_22.Node3DF,
+                       mesh_data: MeshData3DF,) -> Object | None:
+    # Skip meshes without vertex positions
+    if mesh_data.vertices.dtype.names is None:
+        return None
+    if "position" not in mesh_data.vertices.dtype.names:
+        return None
+
+    # Import positions and triangles
+    mesh = bpy.data.meshes.new(node.name)
+    mesh.from_pydata(
+        mesh_data.vertices["position"],
+        [],
+        mesh_data.triangles,
+    )
+
+    # Import vertex UV layers
+    if "uvs" in mesh_data.vertices.dtype.names:
+        for i in range(mesh_data.vertices.dtype["uvs"].shape[0]):
+            uv_layer = mesh.uv_layers.new(name=f"UV{i}")
+            for loop in mesh.loops:
+                uv = mesh_data.vertices["uvs"][loop.vertex_index][i]
+                uv_layer.data[loop.index].uv = (uv[0], 1.0 - uv[1])
+
+    # Import vertex normals
+    if "normal" in mesh_data.vertices.dtype.names:
+        mesh.normals_split_custom_set_from_vertices(
+            mesh_data.vertices["normal"]
+        )
+
+    # Import vertex colors
+    if "color" in mesh_data.vertices.dtype.names:
+        vertex_color_attr = mesh.color_attributes.new(
+            name="vertex_color",
+            type="BYTE_COLOR",
+            domain="POINT",
+        )
+        vertex_color_attr.data.foreach_set(
+            "color",
+            mesh_data.vertices["color"].flatten(),
+        )
+
+    # Validate mesh
+    mesh.validate()
+    mesh.update()
+
+    # Create mesh object
+    mesh_obj = bpy.data.objects.new(node.name, mesh)
+    context.collection.objects.link(mesh_obj)
+
+    return mesh_obj
 
 
 def import_3df(scene_data: SceneData3DF, context: Context) -> None:
-    # Create meshes
-    for mesh_3df in scene_data.meshes:
-        mesh_node = scene_data.nodes[mesh_3df.node_id]
+    node_objects: list[Object] = []
+    for i, node in enumerate(scene_data.nodes):
+        match node.type_id:
+            case 0:
+                node_obj = None
+                if i in scene_data.meshes:
+                    node_obj = import_mesh_object(context, node, scene_data.meshes[i])
+                if node_obj is None:
+                    node_obj = import_empty_object(context, node)
+            case _:
+                node_obj = import_empty_object(context, node)
 
-        # Skip meshes without vertex positions
-        if mesh_3df.vertices.dtype.names is None:
-            continue
-        if "position" not in mesh_3df.vertices.dtype.names:
-            continue
+        node_objects.append(node_obj)
 
-        # Import positions and triangles
-        mesh = bpy.data.meshes.new(mesh_node.name)
-        mesh.from_pydata(
-            mesh_3df.vertices["position"],
-            [],
-            mesh_3df.triangles,
-        )
-
-        # Import vertex UV layers
-        if "uvs" in mesh_3df.vertices.dtype.names:
-            for i in range(mesh_3df.vertices.dtype["uvs"].shape[0]):
-                uv_layer = mesh.uv_layers.new(name=f"UV{i}")
-                for loop in mesh.loops:
-                    uv = mesh_3df.vertices["uvs"][loop.vertex_index][i]
-                    uv_layer.data[loop.index].uv = (uv[0], 1.0 - uv[1])
-
-        # Import vertex normals
-        if "normal" in mesh_3df.vertices.dtype.names:
-            mesh.normals_split_custom_set_from_vertices(
-                mesh_3df.vertices["normal"]
-            )
-
-        # Import vertex colors
-        if "color" in mesh_3df.vertices.dtype.names:
-            vertex_color_attr = mesh.color_attributes.new(
-                name="vertex_color",
-                type="BYTE_COLOR",
-                domain="POINT",
-            )
-            vertex_color_attr.data.foreach_set(
-                "color",
-                mesh_3df.vertices["color"].flatten(),
-            )
-
-        # Validate mesh
-        mesh.validate()
-        mesh.update()
-
-        # Create mesh object
-        mesh_obj = bpy.data.objects.new(mesh_node.name, mesh)
-        context.collection.objects.link(mesh_obj)
+    # Reparent node objects
+    for node, node_obj in zip(scene_data.nodes, node_objects):
+        if node.parent_id > -1:
+            if node.parent_id < len(node_objects):
+                node_obj.parent = node_objects[node.parent_id]
+            else:
+                print(f"WARNING: Failed to reparent {node.name}")
