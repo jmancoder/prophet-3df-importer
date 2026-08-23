@@ -13,7 +13,7 @@ from pathlib import Path
 
 import bpy
 from bpy_extras.io_utils import ImportHelper
-from bpy.props import StringProperty
+from bpy.props import EnumProperty, StringProperty
 from bpy.types import Operator, Context
 
 from . import scene_3df
@@ -21,6 +21,7 @@ from . import scene_3df
 
 class IMPORT_OT_SCENE_3df(Operator, ImportHelper):
     """Load a 3DF scene."""
+
     bl_idname = "import_scene.prophet_3df"
     bl_label = "Import 3DF"
     filename_ext = ".3df"
@@ -31,18 +32,29 @@ class IMPORT_OT_SCENE_3df(Operator, ImportHelper):
         maxlen=255,
     )
 
+    platform: EnumProperty(
+        name="Platform",
+        description="The platform of the game that the 3DF file is from.",
+        items=(
+            ("PS2", "PS2", "Playstation 2"),
+            ("PC", "PC", "Windows"),
+            ("WII", "Wii", "Nintendo Wii"),
+            ("DS", "DS", "Nintendo DS"),
+        ),
+        default="PC",
+    )
+
     def execute(self, context: Context):
         in_path = Path(self.filepath)
         with open(in_path, "rb") as f:
-            scene_data = scene_3df.read_3df(f)
+            scene_data = scene_3df.read_3df(f, self.platform)
         scene_3df.import_3df(scene_data, context)
 
         return {"FINISHED"}
 
 
 def menu_func_import(self, context):
-    self.layout.operator(IMPORT_OT_SCENE_3df.bl_idname,
-                         text="Prophet 3DF (.3df)")
+    self.layout.operator(IMPORT_OT_SCENE_3df.bl_idname, text="Prophet 3DF (.3df)")
 
 
 def register():

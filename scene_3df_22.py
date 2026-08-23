@@ -6,7 +6,6 @@ import numpy.typing as npt
 
 from .binary_reader import BinaryReader
 
-
 HEADER_SIZE = 412
 
 
@@ -110,10 +109,7 @@ def read_node(bs: BinaryReader) -> Node3DF:
 
         # Read face groups
         bs.seek(face_groups_off - HEADER_SIZE)
-        face_groups = [
-            read_face_group(bs)
-            for _ in range(face_groups_count)
-        ]
+        face_groups = [read_face_group(bs) for _ in range(face_groups_count)]
 
         bs.seek(next_node_off)
 

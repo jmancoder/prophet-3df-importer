@@ -10,7 +10,8 @@ import numpy.typing as npt
 from .binary_reader import BinaryReader
 from . import scene_3df_22
 from . import scene_3df_23
-from . import scene_3df_26
+from . import scene_3df_26_ds
+from . import scene_3df_26_pc
 
 
 class MeshData3DF(NamedTuple):
@@ -60,9 +61,9 @@ def tri_strips_to_triangles(indices: list[int]) -> list[tuple[int, int, int]]:
     triangles: list[tuple[int, int, int]] = []
     for i in range(len(indices) - 2):
         if i % 2 == 0:
-            tri = (indices[i], indices[i+1], indices[i+2])
+            tri = (indices[i], indices[i + 1], indices[i + 2])
         else:
-            tri = (indices[i], indices[i+2], indices[i+1])
+            tri = (indices[i], indices[i + 2], indices[i + 1])
 
         # Read triangle if it is not degenerate
         if tri[0] != tri[1] and tri[1] != tri[2] and tri[0] != tri[2]:
@@ -84,16 +85,14 @@ def decompress_chunk_stream(bs: BinaryReader) -> BinaryReader:
         bs.readinto(bs_out.getbuffer())
     elif mode_a == 6:
         # Decompress raw zlib data
-        bs_out = BinaryReader(
-            zlib.decompress(bs.read(decomp_size),
-                            wbits=-15))
+        bs_out = BinaryReader(zlib.decompress(bs.read(decomp_size), wbits=-15))
     else:
         raise ValueError(f"Unknown compression mode {mode_a}")
 
     return bs_out
 
 
-def read_3df(f: BufferedReader) -> SceneData3DF:
+def read_3df(f: BufferedReader, platform: str) -> SceneData3DF:
     # Load header chunk
     bs = BinaryReader(b"\x00" * 412)
     f.readinto(bs.getbuffer())
@@ -107,8 +106,27 @@ def read_3df(f: BufferedReader) -> SceneData3DF:
     version = bs.read_uint32()
     if version == 22 or version == 23:
         header = scene_3df_23.read_header(bs)
+        header_size = scene_3df_22.HEADER_SIZE
     elif version == 26:
-        header = scene_3df_26.read_header(bs)
+        if platform == "DS":
+            header = scene_3df_26_ds.read_header(bs)
+            header_size = scene_3df_26_ds.HEADER_SIZE
+            raise NotImplementedError(
+                f"Unimplemented platform {platform} for version {version}"
+            )
+        elif platform == "PC":
+            header = scene_3df_26_pc.read_header(bs)
+            header_size = scene_3df_22.HEADER_SIZE
+        elif platform == "PS2":
+            header = scene_3df_23.read_header(bs)
+            header_size = scene_3df_22.HEADER_SIZE
+            raise NotImplementedError(
+                f"Unimplemented platform {platform} for version {version}"
+            )
+        else:
+            raise NotImplementedError(
+                f"Unimplemented platform {platform} for version {version}"
+            )
     else:
         raise NotImplementedError(f"Unimplemented 3DF version {version}")
 
@@ -119,28 +137,19 @@ def read_3df(f: BufferedReader) -> SceneData3DF:
         bs = decompress_chunk_stream(bs)
 
     # Read materials
-    bs.seek(header.materials_off - scene_3df_22.HEADER_SIZE)
-    materials = [
-        scene_3df_22.read_material(bs)
-        for _ in range(header.materials_count)
-    ]
+    bs.seek(header.materials_off - header_size)
+    materials = [scene_3df_22.read_material(bs) for _ in range(header.materials_count)]
 
     # Read nodes
-    bs.seek(header.nodes_off - scene_3df_22.HEADER_SIZE)
+    bs.seek(header.nodes_off - header_size)
     if version == 22:
-        nodes = [
-            scene_3df_22.read_node(bs)
-            for _ in range(header.nodes_count)
-        ]
+        nodes = [scene_3df_22.read_node(bs) for _ in range(header.nodes_count)]
     else:
-        nodes = [
-            scene_3df_23.read_node(bs)
-            for _ in range(header.nodes_count)
-        ]
+        nodes = [scene_3df_23.read_node(bs) for _ in range(header.nodes_count)]
 
     # Load mesh chunk
     bs = BinaryReader(b"\x00" * header.meshes_chunk_size)
-    f.seek(scene_3df_22.HEADER_SIZE + header.nodes_chunk_size)
+    f.seek(header_size + header.nodes_chunk_size)
     f.readinto(bs.getbuffer())
     if header.compress_mode == 1:
         bs = decompress_chunk_stream(bs)
@@ -148,20 +157,19 @@ def read_3df(f: BufferedReader) -> SceneData3DF:
     # Read mesh info entries
     if version == 22 or version == 23:
         mesh_info_entries = [
-            scene_3df_22.read_mesh_info(bs)
-            for _ in range(header.nodes_count)
+            scene_3df_22.read_mesh_info(bs) for _ in range(header.nodes_count)
         ]
     else:
         mesh_info_entries = [
-            scene_3df_26.read_mesh_info(bs)
-            for _ in range(header.nodes_count)
+            scene_3df_26_pc.read_mesh_info(bs) for _ in range(header.nodes_count)
         ]
 
     # Read meshes
     mesh_data_map: dict[int, MeshData3DF] = {}
     for i, (node, mesh_info) in enumerate(zip(nodes, mesh_info_entries)):
-        if (mesh_info.vertex_bitmask == 0 or not isinstance(
-                node, scene_3df_22.MeshNode3DF)):
+        if mesh_info.vertex_bitmask == 0 or not isinstance(
+            node, scene_3df_22.MeshNode3DF
+        ):
             continue
 
         # Read vertices
@@ -180,31 +188,26 @@ def read_3df(f: BufferedReader) -> SceneData3DF:
             if face_group.face_type == 3:
                 # Read triangles
                 if version == 22 or version == 23:
-                    triangles.extend([
-                        bs.read_vec3H()
-                        for _ in range(face_group.face_idx_count // 3)
-                    ])
+                    triangles.extend(
+                        [bs.read_vec3H() for _ in range(face_group.face_idx_count // 3)]
+                    )
                 else:
-                    triangles.extend([
-                        bs.read_vec3I()
-                        for _ in range(face_group.face_idx_count // 3)
-                    ])
+                    triangles.extend(
+                        [bs.read_vec3I() for _ in range(face_group.face_idx_count // 3)]
+                    )
             elif face_group.face_type == 1:
                 # Read triangle strips
                 if version == 22 or version == 23:
                     tri_strip_indices = [
-                        bs.read_uint16()
-                        for _ in range(face_group.face_idx_count)
+                        bs.read_uint16() for _ in range(face_group.face_idx_count)
                     ]
                 else:
                     tri_strip_indices = [
-                        bs.read_uint32()
-                        for _ in range(face_group.face_idx_count)
+                        bs.read_uint32() for _ in range(face_group.face_idx_count)
                     ]
                 triangles.extend(tri_strips_to_triangles(tri_strip_indices))
             else:
-                print("WARNING: Unimplemented face type "
-                      + str(face_group.face_type))
+                print("WARNING: Unimplemented face type " + str(face_group.face_type))
 
         mesh_data_map[i] = MeshData3DF(
             vertices,
@@ -221,8 +224,11 @@ def import_empty_object(context: Context, node: scene_3df_22.Node3DF) -> Object:
     return node_obj
 
 
-def import_mesh_object(context: Context, node: scene_3df_22.Node3DF,
-                       mesh_data: MeshData3DF,) -> Object | None:
+def import_mesh_object(
+    context: Context,
+    node: scene_3df_22.Node3DF,
+    mesh_data: MeshData3DF,
+) -> Object | None:
     # Skip meshes without vertex positions
     if mesh_data.vertices.dtype.names is None:
         return None
@@ -247,9 +253,7 @@ def import_mesh_object(context: Context, node: scene_3df_22.Node3DF,
 
     # Import vertex normals
     if "normal" in mesh_data.vertices.dtype.names:
-        mesh.normals_split_custom_set_from_vertices(
-            mesh_data.vertices["normal"]
-        )
+        mesh.normals_split_custom_set_from_vertices(mesh_data.vertices["normal"])
 
     # Import vertex colors
     if "color" in mesh_data.vertices.dtype.names:
@@ -290,9 +294,9 @@ def import_3df(scene_data: SceneData3DF, context: Context) -> None:
         node_objects.append(node_obj)
 
     # Reparent node objects
-    for node, node_obj in zip(scene_data.nodes, node_objects):
-        if node.parent_id > -1:
-            if node.parent_id < len(node_objects):
-                node_obj.parent = node_objects[node.parent_id]
-            else:
-                print(f"WARNING: Failed to reparent {node.name}")
+    # for node, node_obj in zip(scene_data.nodes, node_objects):
+    #     if node.parent_id > -1:
+    #         if node.parent_id < len(node_objects):
+    #             node_obj.parent = node_objects[node.parent_id]
+    #         else:
+    #             print(f"WARNING: Failed to reparent {node.name}")

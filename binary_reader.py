@@ -6,7 +6,7 @@ from mathutils import Matrix
 
 
 class BinaryReader(BytesIO):
-    def __init__(self, data: bytes, big_endian = False) -> None:
+    def __init__(self, data: bytes, big_endian=False) -> None:
         super().__init__(data)
 
         self.endian_symbol: Literal["<", ">"]
@@ -19,28 +19,22 @@ class BinaryReader(BytesIO):
             self.byte_order = "little"
 
     def read_uint8(self) -> int:
-        return int.from_bytes(self.read(1), signed=False,
-                              byteorder=self.byte_order)
+        return int.from_bytes(self.read(1), signed=False, byteorder=self.byte_order)
 
     def read_int8(self) -> int:
-        return int.from_bytes(self.read(1), signed=True,
-                              byteorder=self.byte_order)
+        return int.from_bytes(self.read(1), signed=True, byteorder=self.byte_order)
 
     def read_uint16(self) -> int:
-        return int.from_bytes(self.read(2), signed=False,
-                              byteorder=self.byte_order)
+        return int.from_bytes(self.read(2), signed=False, byteorder=self.byte_order)
 
     def read_int16(self) -> int:
-        return int.from_bytes(self.read(2), signed=True,
-                              byteorder=self.byte_order)
+        return int.from_bytes(self.read(2), signed=True, byteorder=self.byte_order)
 
     def read_uint32(self) -> int:
-        return int.from_bytes(self.read(4), signed=False,
-                              byteorder=self.byte_order)
+        return int.from_bytes(self.read(4), signed=False, byteorder=self.byte_order)
 
     def read_int32(self) -> int:
-        return int.from_bytes(self.read(4), signed=True,
-                              byteorder=self.byte_order)
+        return int.from_bytes(self.read(4), signed=True, byteorder=self.byte_order)
 
     def read_vec3H(self) -> tuple[int, int, int]:
         return struct.unpack(self.endian_symbol + "3H", self.read(6))
@@ -61,10 +55,7 @@ class BinaryReader(BytesIO):
         return struct.unpack(self.endian_symbol + "4f", self.read(16))
 
     def read_mat43(self) -> Matrix:
-        rows = [
-            struct.unpack(self.endian_symbol + "4f", self.read(16))
-            for _ in range(3)
-        ]
+        rows = [self.read_vec4f() for _ in range(3)]
         return Matrix(rows)
 
     def read_string_block(self, length: int) -> str:

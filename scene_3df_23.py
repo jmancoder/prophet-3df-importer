@@ -49,8 +49,7 @@ def read_node(bs: BinaryReader) -> scene_3df_22.Node3DF:
         # Read face groups
         bs.seek(face_groups_off - scene_3df_22.HEADER_SIZE)
         face_groups = [
-            scene_3df_22.read_face_group(bs)
-            for _ in range(face_groups_count)
+            scene_3df_22.read_face_group(bs) for _ in range(face_groups_count)
         ]
 
         bs.seek(next_node_off)
