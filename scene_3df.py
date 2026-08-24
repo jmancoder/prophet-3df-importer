@@ -81,8 +81,7 @@ def decompress_chunk_stream(bs: BinaryReader) -> BinaryReader:
 
     if mode_a == 0:
         # Copy data directly
-        bs_out = BinaryReader(b"\x00" * decomp_size)
-        bs.readinto(bs_out.getbuffer())
+        bs_out = BinaryReader(bs.read(decomp_size))
     elif mode_a == 6:
         # Decompress raw zlib data
         bs_out = BinaryReader(zlib.decompress(bs.read(decomp_size), wbits=-15))
@@ -94,32 +93,33 @@ def decompress_chunk_stream(bs: BinaryReader) -> BinaryReader:
 
 def read_3df(f: BufferedReader, platform: str) -> SceneData3DF:
     # Load header chunk
-    bs = BinaryReader(b"\x00" * 412)
-    f.readinto(bs.getbuffer())
+    bs = BinaryReader(f.read(8))
 
     # Validate signature
     sig = bs.read_string_block(4)
     if sig != "3df":
         raise ValueError("Missing 3df file signature")
 
-    # Read version-specific header
+    # Load and read version-specific header
     version = bs.read_uint32()
+    header_size = scene_3df_22.HEADER_SIZE
     if version == 22 or version == 23:
+        bs = BinaryReader(f.read(header_size - 8))
         header = scene_3df_23.read_header(bs)
-        header_size = scene_3df_22.HEADER_SIZE
     elif version == 26:
         if platform == "DS":
-            header = scene_3df_26_ds.read_header(bs)
             header_size = scene_3df_26_ds.HEADER_SIZE
+            bs = BinaryReader(f.read(header_size - 8))
+            header = scene_3df_26_ds.read_header(bs)
             raise NotImplementedError(
                 f"Unimplemented platform {platform} for version {version}"
             )
         elif platform == "PC":
+            bs = BinaryReader(f.read(header_size - 8))
             header = scene_3df_26_pc.read_header(bs)
-            header_size = scene_3df_22.HEADER_SIZE
         elif platform == "PS2":
+            bs = BinaryReader(f.read(header_size - 8))
             header = scene_3df_23.read_header(bs)
-            header_size = scene_3df_22.HEADER_SIZE
             raise NotImplementedError(
                 f"Unimplemented platform {platform} for version {version}"
             )
@@ -131,8 +131,7 @@ def read_3df(f: BufferedReader, platform: str) -> SceneData3DF:
         raise NotImplementedError(f"Unimplemented 3DF version {version}")
 
     # Load nodes chunk
-    bs = BinaryReader(b"\x00" * header.nodes_chunk_size)
-    f.readinto(bs.getbuffer())
+    bs = BinaryReader(f.read(header.nodes_chunk_size))
     if header.compress_mode == 1:
         bs = decompress_chunk_stream(bs)
 
@@ -148,9 +147,8 @@ def read_3df(f: BufferedReader, platform: str) -> SceneData3DF:
         nodes = [scene_3df_23.read_node(bs) for _ in range(header.nodes_count)]
 
     # Load mesh chunk
-    bs = BinaryReader(b"\x00" * header.meshes_chunk_size)
     f.seek(header_size + header.nodes_chunk_size)
-    f.readinto(bs.getbuffer())
+    bs = BinaryReader(f.read(header.meshes_chunk_size))
     if header.compress_mode == 1:
         bs = decompress_chunk_stream(bs)
 

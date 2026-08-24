@@ -2,7 +2,6 @@ from dataclasses import dataclass
 from typing import NamedTuple
 
 from mathutils import Matrix
-import numpy.typing as npt
 
 from .binary_reader import BinaryReader
 
