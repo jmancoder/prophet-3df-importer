@@ -1,4 +1,5 @@
 from io import BufferedReader
+import math
 from typing import NamedTuple
 import zlib
 
@@ -21,7 +22,7 @@ class MeshData3DF(NamedTuple):
 
 class SceneData3DF(NamedTuple):
     nodes: list[scene_3df_22.Node3DF]
-    meshes: dict[int, MeshData3DF]
+    mesh_map: dict[int, MeshData3DF]
 
 
 def create_vertex_dtype(bitmask: int) -> npt.DTypeLike:
@@ -148,7 +149,7 @@ def read_3df(f: BufferedReader, platform: str) -> SceneData3DF:
 
     # Load mesh chunk
     f.seek(header_size + header.nodes_chunk_size)
-    bs = BinaryReader(f.read(header.meshes_chunk_size))
+    bs = BinaryReader(f.read(header.mesh_chunk_size))
     if header.compress_mode == 1:
         bs = decompress_chunk_stream(bs)
 
@@ -217,21 +218,32 @@ def read_3df(f: BufferedReader, platform: str) -> SceneData3DF:
 
 def import_empty_object(context: Context, node: scene_3df_22.Node3DF) -> Object:
     node_obj = bpy.data.objects.new(node.name, None)
+    node_obj.empty_display_size = 0.2
     context.collection.objects.link(node_obj)
 
     return node_obj
+
+
+def import_camera_object(context: Context, node: scene_3df_22.Node3DF):
+    camera = bpy.data.cameras.new(node.name)
+    camera_obj = bpy.data.objects.new(node.name, camera)
+    context.collection.objects.link(camera_obj)
+
+    return camera_obj
 
 
 def import_mesh_object(
     context: Context,
     node: scene_3df_22.Node3DF,
     mesh_data: MeshData3DF,
-) -> Object | None:
-    # Skip meshes without vertex positions
-    if mesh_data.vertices.dtype.names is None:
-        return None
-    if "position" not in mesh_data.vertices.dtype.names:
-        return None
+) -> Object:
+    # Create empty objects for meshes without vertex positions
+    if (
+        mesh_data.vertices.dtype.names is None
+        or "position" not in mesh_data.vertices.dtype.names
+    ):
+        print(f"WARNING: Mesh node {node.name} contains no positions")
+        return import_empty_object(context, node)
 
     # Import positions and triangles
     mesh = bpy.data.meshes.new(node.name)
@@ -281,14 +293,15 @@ def import_3df(scene_data: SceneData3DF, context: Context) -> None:
     for i, node in enumerate(scene_data.nodes):
         match node.type_id:
             case 0:
-                node_obj = None
-                if i in scene_data.meshes:
-                    node_obj = import_mesh_object(context, node, scene_data.meshes[i])
-                if node_obj is None:
+                if i in scene_data.mesh_map:
+                    node_obj = import_mesh_object(context, node, scene_data.mesh_map[i])
+                else:
+                    print(f"WARNING: No mesh info entry found for node {node.name}")
                     node_obj = import_empty_object(context, node)
+            case 3:
+                node_obj = import_camera_object(context, node)
             case _:
                 node_obj = import_empty_object(context, node)
-
         node_objects.append(node_obj)
 
     # Update node hierarchy
@@ -299,3 +312,7 @@ def import_3df(scene_data: SceneData3DF, context: Context) -> None:
     # Update node transforms
     for i, (node, node_obj) in enumerate(zip(scene_data.nodes, node_objects)):
         node_obj.matrix_local = node.transform
+
+        # Flip camera objects
+        if node.type_id == 3:
+            node_obj.rotation_euler = (0.0, math.radians(180.0), 0.0)

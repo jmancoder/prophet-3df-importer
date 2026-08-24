@@ -10,7 +10,7 @@ class Header3DF(NamedTuple):
     compress_mode: int
     nodes_chunk_size: int
     unk_chunk_size: int
-    meshes_chunk_size: int
+    mesh_chunk_size: int
     textures_chunk_size: int
     materials_count: int
     materials_off: int
@@ -98,7 +98,7 @@ def read_header(bs: BinaryReader) -> Header3DF:
     compress_mode = bs.read_uint32()
     nodes_chunk_size = bs.read_uint32()
     unk_chunk_size = bs.read_uint32()
-    meshes_chunk_size = bs.read_uint32()
+    mesh_chunk_size = bs.read_uint32()
     bs.seek(124, 1)
     textures_chunk_size = bs.read_uint32()
     bs.seek(128, 1)
@@ -115,7 +115,7 @@ def read_header(bs: BinaryReader) -> Header3DF:
         compress_mode,
         nodes_chunk_size,
         unk_chunk_size,
-        meshes_chunk_size,
+        mesh_chunk_size,
         textures_chunk_size,
         materials_count,
         materials_off,
