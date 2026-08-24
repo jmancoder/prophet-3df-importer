@@ -54,42 +54,56 @@ def read_node(bs: BinaryReader) -> scene_3df_22.Node3DF:
     else:
         child_indexes = []
 
-    if face_groups_off > 0:
-        vertex_count = bs.read_uint32()
-        face_idx_count = bs.read_uint32()
-        face_groups_count = bs.read_uint32()
-        bs.seek(92, 1)
+    match node_type:
+        case 0:
+            vertex_count = bs.read_uint32()
+            face_idx_count = bs.read_uint32()
+            face_groups_count = bs.read_uint32()
+            bs.seek(92, 1)
 
-        # Read face groups
-        cur_off = bs.tell()
-        bs.seek(face_groups_off - scene_3df_22.HEADER_SIZE)
-        face_groups = [
-            scene_3df_22.read_face_group(bs) for _ in range(face_groups_count)
-        ]
-        bs.seek(cur_off)
+            # Read face groups
+            if face_groups_off > 0:
+                cur_off = bs.tell()
+                bs.seek(face_groups_off - scene_3df_22.HEADER_SIZE)
+                face_groups = [
+                    scene_3df_22.read_face_group(bs) for _ in range(face_groups_count)
+                ]
+                bs.seek(cur_off)
+            else:
+                face_groups = []
 
-        return scene_3df_22.MeshNode3DF(
-            node_name,
-            node_type,
-            child_indexes,
-            transform_type,
-            transform,
-            vertex_count,
-            face_idx_count,
-            face_groups,
-        )
-    else:
-        unk_floats = [bs.read_float() for _ in range(13)]
-        bs.seek(52, 1)
+            return scene_3df_22.MeshNode3DF(
+                node_name,
+                node_type,
+                child_indexes,
+                transform_type,
+                transform,
+                vertex_count,
+                face_idx_count,
+                face_groups,
+            )
+        case 1:
+            unk_floats = [bs.read_float() for _ in range(13)]
+            bs.seek(52, 1)
 
-        return scene_3df_22.BoneNode3DF(
-            node_name,
-            node_type,
-            child_indexes,
-            transform_type,
-            transform,
-            unk_floats,
-        )
+            return scene_3df_22.BoneNode3DF(
+                node_name,
+                node_type,
+                child_indexes,
+                transform_type,
+                transform,
+                unk_floats,
+            )
+        case _:
+            bs.seek(104, 1)
+
+            return scene_3df_22.Node3DF(
+                node_name,
+                node_type,
+                child_indexes,
+                transform_type,
+                transform,
+            )
 
 
 def read_header(bs: BinaryReader) -> Header3DF:

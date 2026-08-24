@@ -4,7 +4,8 @@ from typing import NamedTuple
 import zlib
 
 import bpy
-from bpy.types import Context, Object
+from bpy.types import Armature, Context, EditBone, Object
+from mathutils import Matrix
 import numpy as np
 import numpy.typing as npt
 
@@ -288,31 +289,96 @@ def import_mesh_object(
     return mesh_obj
 
 
-def import_3df(scene_data: SceneData3DF, context: Context) -> None:
-    node_objects: list[Object] = []
-    for i, node in enumerate(scene_data.nodes):
-        match node.type_id:
-            case 0:
-                if i in scene_data.mesh_map:
-                    node_obj = import_mesh_object(context, node, scene_data.mesh_map[i])
-                else:
-                    print(f"WARNING: No mesh info entry found for node {node.name}")
-                    node_obj = import_empty_object(context, node)
-            case 3:
-                node_obj = import_camera_object(context, node)
-            case _:
+def import_edit_bone(
+    context: Context,
+    scene_data: SceneData3DF,
+    node_index: int,
+    armature_obj: Object,
+    parent_bone: EditBone | None,
+    parent_transform: Matrix,
+) -> None:
+    node = scene_data.nodes[node_index]
+    edit_bone = armature_obj.data.edit_bones.new(node.name)
+
+    # Set bone parent and armature-space transform
+    edit_bone.length = 0.2
+    if parent_bone is not None:
+        edit_bone.parent = parent_bone
+    edit_bone.matrix = parent_transform @ node.transform
+
+    for child_index in node.child_indexes:
+        child_node = scene_data.nodes[child_index]
+        if child_node.type_id != 1:
+            # Skip non-bone child nodes until second pass
+            continue
+        import_edit_bone(
+            context,
+            scene_data,
+            child_index,
+            armature_obj,
+            edit_bone,
+            edit_bone.matrix,
+        )
+
+
+def import_node(
+    context: Context,
+    scene_data: SceneData3DF,
+    node_index: int,
+    parent_obj: Object | None,
+) -> Object:
+    node = scene_data.nodes[node_index]
+    match node.type_id:
+        case 0:
+            if node_index in scene_data.mesh_map:
+                node_obj = import_mesh_object(
+                    context, node, scene_data.mesh_map[node_index]
+                )
+                # Replace mesh with armature if it has any child bones
+                skinned = False
+                for child_index in node.child_indexes:
+                    if scene_data.nodes[child_index].type_id == 1:
+                        skinned = True
+                if skinned:
+                    armature = bpy.data.armatures.new(node.name)
+                    armature_obj = bpy.data.objects.new(node.name, armature)
+                    context.collection.objects.link(armature_obj)
+                    node_obj.parent = armature_obj
+                    node_obj = armature_obj
+            else:
+                print(f"WARNING: No mesh info entry found for node {node.name}")
                 node_obj = import_empty_object(context, node)
-        node_objects.append(node_obj)
+        case 3:
+            node_obj = import_camera_object(context, node)
+        case _:
+            node_obj = import_empty_object(context, node)
 
-    # Update node hierarchy
-    for i, (node, node_obj) in enumerate(zip(scene_data.nodes, node_objects)):
-        for child_idx in node.child_indexes:
-            node_objects[child_idx].parent = node_obj
-
-    # Update node transforms
-    for i, (node, node_obj) in enumerate(zip(scene_data.nodes, node_objects)):
+    # Set object parent and transform
+    if parent_obj is not None:
+        node_obj.parent = parent_obj
         node_obj.matrix_local = node.transform
-
-        # Flip camera objects
         if node.type_id == 3:
+            # Flip camera objects
             node_obj.rotation_euler = (0.0, math.radians(180.0), 0.0)
+    else:
+        node_obj.matrix_world = node.transform
+
+    # Import child nodes
+    for child_index in node.child_indexes:
+        child_node = scene_data.nodes[child_index]
+        if child_node.type_id == 1 and type(node_obj.data) is Armature:
+            context.view_layer.objects.active = node_obj
+            bpy.ops.object.mode_set(mode="EDIT")
+            import_edit_bone(
+                context, scene_data, child_index, node_obj, None, Matrix.Identity(4)
+            )
+            bpy.ops.object.mode_set(mode="OBJECT")
+        else:
+            import_node(context, scene_data, child_index, node_obj)
+
+    return node_obj
+
+
+def import_3df(context: Context, scene_data: SceneData3DF) -> None:
+    import_node(context, scene_data, 0, None)
+    bpy.ops.object.mode_set(mode="OBJECT")

@@ -114,40 +114,51 @@ def read_node(bs: BinaryReader) -> Node3DF:
     else:
         child_indexes = []
 
-    if face_groups_off > 0:
-        vertex_count = bs.read_uint32()
-        face_idx_count = bs.read_uint32()
-        face_groups_count = bs.read_uint32()
-        bs.seek(92, 1)
+    match node_type:
+        case 0:
+            vertex_count = bs.read_uint32()
+            face_idx_count = bs.read_uint32()
+            face_groups_count = bs.read_uint32()
+            bs.seek(92, 1)
 
-        # Read face groups
-        cur_off = bs.tell()
-        bs.seek(face_groups_off - HEADER_SIZE)
-        face_groups = [read_face_group(bs) for _ in range(face_groups_count)]
-        bs.seek(cur_off)
+            # Read face groups
+            cur_off = bs.tell()
+            bs.seek(face_groups_off - HEADER_SIZE)
+            face_groups = [read_face_group(bs) for _ in range(face_groups_count)]
+            bs.seek(cur_off)
 
-        return MeshNode3DF(
-            node_name,
-            node_type,
-            child_indexes,
-            transform_type,
-            transform,
-            vertex_count,
-            face_idx_count,
-            face_groups,
-        )
-    else:
-        unk_floats = [bs.read_float() for _ in range(13)]
-        bs.seek(52, 1)
+            return MeshNode3DF(
+                node_name,
+                node_type,
+                child_indexes,
+                transform_type,
+                transform,
+                vertex_count,
+                face_idx_count,
+                face_groups,
+            )
+        case 1:
+            unk_floats = [bs.read_float() for _ in range(13)]
+            bs.seek(52, 1)
 
-        return BoneNode3DF(
-            node_name,
-            node_type,
-            child_indexes,
-            transform_type,
-            transform,
-            unk_floats,
-        )
+            return BoneNode3DF(
+                node_name,
+                node_type,
+                child_indexes,
+                transform_type,
+                transform,
+                unk_floats,
+            )
+        case _:
+            bs.seek(104, 1)
+
+            return Node3DF(
+                node_name,
+                node_type,
+                child_indexes,
+                transform_type,
+                transform,
+            )
 
 
 def read_material(bs: BinaryReader) -> Material3DF:
