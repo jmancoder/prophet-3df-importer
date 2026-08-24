@@ -291,10 +291,11 @@ def import_3df(scene_data: SceneData3DF, context: Context) -> None:
 
         node_objects.append(node_obj)
 
-    # Reparent node objects
-    # for node, node_obj in zip(scene_data.nodes, node_objects):
-    #     if node.parent_id > -1:
-    #         if node.parent_id < len(node_objects):
-    #             node_obj.parent = node_objects[node.parent_id]
-    #         else:
-    #             print(f"WARNING: Failed to reparent {node.name}")
+    # Update node hierarchy
+    for i, (node, node_obj) in enumerate(zip(scene_data.nodes, node_objects)):
+        for child_idx in node.child_indexes:
+            node_objects[child_idx].parent = node_obj
+
+    # Update node transforms
+    for i, (node, node_obj) in enumerate(zip(scene_data.nodes, node_objects)):
+        node_obj.matrix_local = node.transform

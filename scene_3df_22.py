@@ -26,14 +26,14 @@ class FaceGroup3DF(NamedTuple):
 class Node3DF:
     name: str
     type_id: int
-    parent_id: int
+    child_indexes: list[int]
     transform_type: int
+    transform: Matrix
 
 
 @dataclass(frozen=True, slots=True)
 class BoneNode3DF(Node3DF):
-    unk_float: float
-    unk_matrix: Matrix
+    unk_floats: list[float]
 
 
 @dataclass(frozen=True, slots=True)
@@ -85,54 +85,68 @@ def read_node(bs: BinaryReader) -> Node3DF:
     node_type = bs.read_uint32()
     bs.read_int32()
     bs.read_int32()
+    child_index_count = bs.read_int32()
+    unk_id = bs.read_int32()
+    child_index_off = bs.read_uint32()
     bs.read_int32()
-    parent_id = bs.read_int32()
-    unk_ints_off = bs.read_uint32()
-    bs.read_int32()
-    bounds_min = bs.read_vec3f()
-    bounds_max = bs.read_vec3f()
+    unk_vec_0 = bs.read_vec3f()
+    unk_vec_1 = bs.read_vec3f()
     unk_floats_off = bs.read_uint32()
     bs.read_int32()
     bs.read_int32()
     transform_type = bs.read_uint32()
-    bs.seek(148, 1)
+    transform = bs.read_loc_rot_scale()
+    bs.read_vec3f()
+    bs.read_int32()
+    bs.read_float()
+    bounds_min = bs.read_vec3f()
+    bounds_max = bs.read_vec3f()
+    bs.seek(68, 1)
     face_groups_off = bs.read_uint32()
     bs.seek(28, 1)
+
+    # Read child indexes
+    if child_index_count > 0:
+        cur_off = bs.tell()
+        bs.seek(child_index_off - HEADER_SIZE)
+        child_indexes = [bs.read_uint32() for _ in range(child_index_count)]
+        bs.seek(cur_off)
+    else:
+        child_indexes = []
 
     if face_groups_off > 0:
         vertex_count = bs.read_uint32()
         face_idx_count = bs.read_uint32()
         face_groups_count = bs.read_uint32()
         bs.seek(92, 1)
-        next_node_off = bs.tell()
 
         # Read face groups
+        cur_off = bs.tell()
         bs.seek(face_groups_off - HEADER_SIZE)
         face_groups = [read_face_group(bs) for _ in range(face_groups_count)]
-
-        bs.seek(next_node_off)
+        bs.seek(cur_off)
 
         return MeshNode3DF(
             node_name,
             node_type,
-            parent_id,
+            child_indexes,
             transform_type,
+            transform,
             vertex_count,
             face_idx_count,
             face_groups,
         )
     else:
-        unk_float = bs.read_float()
-        unk_matrix = bs.read_mat43()
+        unk_floats = [bs.read_float() for _ in range(13)]
         bs.seek(52, 1)
 
         return BoneNode3DF(
             node_name,
             node_type,
-            parent_id,
+            child_indexes,
             transform_type,
-            unk_float,
-            unk_matrix,
+            transform,
+            unk_floats,
         )
 
 

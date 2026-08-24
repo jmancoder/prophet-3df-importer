@@ -2,7 +2,7 @@ from io import BytesIO
 import struct
 from typing import Literal
 
-from mathutils import Matrix
+from mathutils import Euler, Matrix
 
 
 class BinaryReader(BytesIO):
@@ -54,9 +54,15 @@ class BinaryReader(BytesIO):
     def read_vec4f(self) -> tuple[float, float, float, float]:
         return struct.unpack(self.endian_symbol + "4f", self.read(16))
 
-    def read_mat43(self) -> Matrix:
+    def read_loc_rot_scale(self) -> Matrix:
+        location = self.read_vec3f()
+        rotation = Euler(self.read_vec3f())
+        scale = self.read_vec3f()
+        return Matrix.LocRotScale(location, rotation, scale)
+
+    def read_matrix_3x4(self) -> Matrix:
         rows = [self.read_vec4f() for _ in range(3)]
-        return Matrix(rows)
+        return Matrix(rows).to_4x4()
 
     def read_string_block(self, length: int) -> str:
         text = self.read(length).decode(errors="ignore")
