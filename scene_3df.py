@@ -1,10 +1,10 @@
-from dataclasses import dataclass
 from io import BufferedReader
 from typing import NamedTuple
 import zlib
 
 import bpy
 from bpy.types import Context, EditBone, Object
+import math
 from mathutils import Matrix
 import numpy as np
 import numpy.typing as npt
@@ -24,13 +24,6 @@ class MeshData3DF(NamedTuple):
 class SceneData3DF(NamedTuple):
     nodes: list[scene_3df_22.Node3DF]
     mesh_map: dict[int, MeshData3DF]
-
-
-@dataclass
-class ImportRecord:
-    obj: Object | None = None
-    armature_obj: Object | None = None
-    mesh_obj: Object | None = None
 
 
 def create_vertex_dtype(bitmask: int) -> npt.DTypeLike:
@@ -296,297 +289,144 @@ def import_mesh_object(
     return mesh_obj
 
 
-def import_edit_bone(
+def create_objects(
     context: Context,
     scene_data: SceneData3DF,
+    object_map: dict[int, Object],
+    armature_indexes: list[int],
     node_index: int,
-    armature_obj: Object,
-    parent_bone: EditBone | None,
-    parent_transform: Matrix,
-    pending_armature_indexes: list[int],
+    parent_world_transform: Matrix,
 ) -> None:
     node = scene_data.nodes[node_index]
-    edit_bone = armature_obj.data.edit_bones.new(node.name)
-
-    # Set bone parent and armature-space transform
-    edit_bone.length = 0.2
-    if parent_bone is not None:
-        edit_bone.parent = parent_bone
-    edit_bone.matrix = parent_transform @ node.transform
-
-    for child_index in node.child_indexes:
-        child_node = scene_data.nodes[child_index]
-        if child_node.type_id == 1:
-            import_edit_bone(
-                context,
-                scene_data,
-                child_index,
-                armature_obj,
-                edit_bone,
-                edit_bone.matrix,
-                pending_armature_indexes,
-            )
-        else:
-            # Wait until next pass to import bone-parented nodes
-            pending_armature_indexes.append(node_index)
-
-
-def calculate_world_transforms(
-    scene_data: SceneData3DF,
-) -> dict[int, Matrix]:
-    world_transforms: dict[int, Matrix] = {}
-
-    def visit(node_index: int, parent_world: Matrix) -> None:
-        node = scene_data.nodes[node_index]
-
-        world = parent_world @ node.transform
-        world_transforms[node_index] = world
-
-        for child_index in node.child_indexes:
-            visit(child_index, world)
-
-    visit(0, Matrix.Identity(4))
-    return world_transforms
-
-
-def has_bone_children(
-    scene_data: SceneData3DF,
-    node_index: int,
-) -> bool:
-    return any(
-        scene_data.nodes[child_index].type_id == 1
-        for child_index in scene_data.nodes[node_index].child_indexes
-    )
-
-
-def create_node_objects(
-    context: Context,
-    scene_data: SceneData3DF,
-    world_transforms: dict[int, Matrix],
-) -> tuple[
-    dict[int, ImportRecord],
-    list[int],
-]:
-    node_records: dict[int, ImportRecord] = {}
-    armature_node_indexes: list[int] = []
-
-    for node_index, node in enumerate(scene_data.nodes):
-        # Skip bones
-        if node.type_id == 1:
-            continue
-
-        if node.type_id == 0:
-            if node_index not in scene_data.mesh_map:
-                obj = import_empty_object(context, node)
-                node_records[node_index] = ImportRecord(obj=obj)
-                continue
-
-            mesh_obj = import_mesh_object(
-                context,
-                node,
-                scene_data.mesh_map[node_index],
-            )
-
-            if has_bone_children(scene_data, node_index):
-                armature_data = bpy.data.armatures.new(node.name)
-                armature_obj = bpy.data.objects.new(
-                    node.name,
-                    armature_data,
-                )
-                context.collection.objects.link(armature_obj)
-                armature_obj.matrix_world = world_transforms[node_index]
-
-                # Keep mesh as child of armature
-                mesh_obj.parent = armature_obj
-                mesh_obj.matrix_world = world_transforms[node_index]
-
-                node_records[node_index] = ImportRecord(
-                    obj=armature_obj,
-                    armature_obj=armature_obj,
-                    mesh_obj=mesh_obj,
-                )
-
-                armature_node_indexes.append(node_index)
-
-            else:
-                mesh_obj.matrix_world = world_transforms[node_index]
-                node_records[node_index] = ImportRecord(
-                    obj=mesh_obj,
-                )
-        elif node.type_id == 3:
-            obj = import_camera_object(context, node)
-            obj.matrix_world = world_transforms[node_index]
-            node_records[node_index] = ImportRecord(obj=obj)
-        else:
-            obj = import_empty_object(context, node)
-            obj.matrix_world = world_transforms[node_index]
-            node_records[node_index] = ImportRecord(obj=obj)
-
-    return node_records, armature_node_indexes
-
-
-def import_armature_bones(
-    context: Context,
-    scene_data: SceneData3DF,
-    armature_node_index: int,
-    armature_obj: Object,
-    world_transforms: dict[int, Matrix],
-    bone_records: dict[int, tuple[Object, str]],
-) -> None:
-    context.view_layer.objects.active = armature_obj
-    armature_obj.select_set(True)
-
-    bpy.ops.object.mode_set(mode="EDIT")
-
-    try:
-        armature_inverse = armature_obj.matrix_world.inverted()
-
-        def create_bone(
-            bone_node_index: int,
-            parent_edit_bone: EditBone | None,
-        ) -> None:
-            node = scene_data.nodes[bone_node_index]
-
-            edit_bone = armature_obj.data.edit_bones.new(node.name)
-
-            if parent_edit_bone is not None:
-                edit_bone.parent = parent_edit_bone
-
-            bone_matrix = armature_inverse @ world_transforms[bone_node_index]
-
-            edit_bone.length = 0.2
-            edit_bone.matrix = bone_matrix
-
-            bone_records[bone_node_index] = (
-                armature_obj,
-                edit_bone.name,
-            )
-
-            for child_index in node.child_indexes:
-                child_node = scene_data.nodes[child_index]
-
-                if child_node.type_id == 1:
-                    create_bone(
-                        child_index,
-                        edit_bone,
-                    )
-
-        armature_node = scene_data.nodes[armature_node_index]
-
-        for child_index in armature_node.child_indexes:
-            child_node = scene_data.nodes[child_index]
-
-            if child_node.type_id == 1:
-                create_bone(child_index, None)
-
-    finally:
-        bpy.ops.object.mode_set(mode="OBJECT")
-
-
-def import_node_object(
-    context: Context,
-    scene_data: SceneData3DF,
-    node_index: int,
-) -> Object:
-    node = scene_data.nodes[node_index]
+    world_transform = parent_world_transform @ node.transform
     match node.type_id:
+        case 1:
+            # Skip bones until next pass
+            obj = None
         case 0:
             if node_index in scene_data.mesh_map:
-                node_obj = import_mesh_object(
-                    context, node, scene_data.mesh_map[node_index]
+                obj = import_mesh_object(
+                    context,
+                    node,
+                    scene_data.mesh_map[node_index],
                 )
-                # Replace mesh with armature if it has any child bones
-                skinned = False
-                for child_index in node.child_indexes:
-                    if scene_data.nodes[child_index].type_id == 1:
-                        skinned = True
-                if skinned:
-                    armature = bpy.data.armatures.new(node.name)
-                    armature_obj = bpy.data.objects.new(node.name, armature)
-                    context.collection.objects.link(armature_obj)
-                    node_obj.parent = armature_obj
-                    node_obj = armature_obj
             else:
-                print(f"WARNING: No mesh info entry found for node {node.name}")
-                node_obj = import_empty_object(context, node)
+                obj = import_empty_object(context, node)
+            obj.matrix_world = world_transform
+
+            # Parent mesh to armature if it has child bones
+            if any(
+                scene_data.nodes[child_idx].type_id == 1
+                for child_idx in scene_data.nodes[node_index].child_indexes
+            ):
+                armature = bpy.data.armatures.new(node.name)
+                armature_obj = bpy.data.objects.new(node.name, armature)
+                context.collection.objects.link(armature_obj)
+                armature_indexes.append(node_index)
+
+                # Work with the armature instead of the mesh
+                armature_obj.matrix_world = obj.matrix_world
+                obj.parent = armature_obj
+                obj = armature_obj
         case 3:
-            node_obj = import_camera_object(context, node)
+            obj = import_camera_object(context, node)
+            # Flip camera
+            flip_matrix = Matrix.Rotation(math.radians(180), 4, "Y")
+            obj.matrix_world = world_transform @ flip_matrix
         case _:
-            node_obj = import_empty_object(context, node)
+            obj = import_empty_object(context, node)
+            obj.matrix_world = world_transform
 
-    return node_obj
+    # Store object for next two passes
+    if obj is not None:
+        object_map[node_index] = obj
 
-
-def build_parent_map(
-    scene_data: SceneData3DF,
-) -> dict[int, int]:
-    parent_map: dict[int, int] = {}
-    for parent_index, node in enumerate(scene_data.nodes):
-        for child_index in node.child_indexes:
-            if child_index in parent_map:
-                raise ValueError(f"Node {child_index} has multiple parents")
-            parent_map[child_index] = parent_index
-
-    return parent_map
-
-
-def apply_object_parenting(
-    scene_data: SceneData3DF,
-    node_records: dict[int, ImportRecord],
-    bone_records: dict[int, tuple[Object, str]],
-    world_transforms: dict[int, Matrix],
-) -> None:
-    parent_map = build_parent_map(scene_data)
-
-    for node_index, record in node_records.items():
-        parent_index = parent_map.get(node_index)
-        if parent_index is None:
-            record.obj.matrix_world = world_transforms[node_index]
-            continue
-
-        parent_node = scene_data.nodes[parent_index]
-        if parent_node.type_id == 1:
-            armature_obj, bone_name = bone_records[parent_index]
-            record.obj.parent = armature_obj
-            record.obj.parent_type = "BONE"
-            record.obj.parent_bone = bone_name
-        else:
-            parent_obj = node_records[parent_index].obj
-            record.obj.parent = parent_obj
-            record.obj.parent_type = "OBJECT"
-
-        # Restore source transform after reparenting
-        record.obj.matrix_world = world_transforms[node_index]
-
-
-def import_3df(
-    context: Context,
-    scene_data: SceneData3DF,
-) -> None:
-    world_transforms = calculate_world_transforms(scene_data)
-    node_records, armature_node_indexes = create_node_objects(
-        context,
-        scene_data,
-        world_transforms,
-    )
-
-    bone_records: dict[int, tuple[Object, str]] = {}
-    for armature_node_index in armature_node_indexes:
-        armature_obj = node_records[armature_node_index].armature_obj
-        if armature_obj is None:
-            continue
-        import_armature_bones(
+    # Create child objects
+    for child_idx in node.child_indexes:
+        create_objects(
             context,
             scene_data,
-            armature_node_index,
-            armature_obj,
-            world_transforms,
-            bone_records,
+            object_map,
+            armature_indexes,
+            child_idx,
+            world_transform,
         )
 
-    apply_object_parenting(
-        scene_data,
-        node_records,
-        bone_records,
-        world_transforms,
+
+def create_bones(
+    scene_data: SceneData3DF,
+    bone_map: dict[int, tuple[str, Object]],
+    node_index: int,
+    armature_object: Object,
+    parent_bone: EditBone | None,
+    parent_world_transform: Matrix,
+) -> None:
+    node = scene_data.nodes[node_index]
+    transform = parent_world_transform @ node.transform
+
+    # Create edit bone
+    bone = armature_object.data.edit_bones.new(node.name)
+    bone.length = 0.2
+    if parent_bone:
+        bone.parent = parent_bone
+    bone.matrix = armature_object.matrix_world.inverted() @ transform
+
+    # Store bone name and armature for next pass
+    bone_map[node_index] = (bone.name, armature_object)
+
+    # Create child bones
+    for child_idx in node.child_indexes:
+        if scene_data.nodes[child_idx].type_id == 1:
+            create_bones(
+                scene_data,
+                bone_map,
+                child_idx,
+                armature_object,
+                bone,
+                transform,
+            )
+
+
+def import_3df(context: Context, scene_data: SceneData3DF) -> None:
+    object_map: dict[int, Object] = {}
+    armature_indexes: list[int] = []
+    create_objects(
+        context, scene_data, object_map, armature_indexes, 0, Matrix.Identity(4)
     )
+
+    bone_map: dict[int, tuple[str, Object]] = {}
+    for armature_idx in armature_indexes:
+        armature_obj = object_map[armature_idx]
+        context.view_layer.objects.active = armature_obj
+        bpy.ops.object.mode_set(mode="EDIT")
+        create_bones(
+            scene_data,
+            bone_map,
+            armature_idx,
+            armature_obj,
+            None,
+            Matrix.Identity(4),
+        )
+        bpy.ops.object.mode_set(mode="OBJECT")
+
+    # Reparent objects
+    for parent_idx, parent_node in enumerate(scene_data.nodes):
+        for child_idx in parent_node.child_indexes:
+            if child_idx not in object_map:
+                continue
+            child_obj = object_map[child_idx]
+            if parent_idx in bone_map:
+                bone_name, armature_obj = bone_map[parent_idx]
+                parent_bone = armature_obj.data.bones[bone_name]
+
+                child_obj.parent = armature_obj
+                child_obj.parent_type = "BONE"
+                child_obj.parent_bone = bone_name
+
+                child_obj.matrix_world = (
+                    armature_obj.matrix_world
+                    @ parent_bone.matrix_local
+                    @ scene_data.nodes[child_idx].transform
+                )
+            else:
+                child_obj.parent = object_map[parent_idx]
