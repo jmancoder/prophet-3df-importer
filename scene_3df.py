@@ -1,6 +1,5 @@
 from dataclasses import dataclass
 from io import BufferedReader
-import math
 from typing import NamedTuple
 import zlib
 
@@ -372,8 +371,8 @@ def create_node_objects(
     armature_node_indexes: list[int] = []
 
     for node_index, node in enumerate(scene_data.nodes):
+        # Skip bones
         if node.type_id == 1:
-            # Bone nodes do not have Blender Objects.
             continue
 
         if node.type_id == 0:
@@ -395,10 +394,9 @@ def create_node_objects(
                     armature_data,
                 )
                 context.collection.objects.link(armature_obj)
-
                 armature_obj.matrix_world = world_transforms[node_index]
 
-                # Keep the actual mesh under the armature object.
+                # Keep mesh as child of armature
                 mesh_obj.parent = armature_obj
                 mesh_obj.matrix_world = world_transforms[node_index]
 
@@ -412,23 +410,16 @@ def create_node_objects(
 
             else:
                 mesh_obj.matrix_world = world_transforms[node_index]
-
                 node_records[node_index] = ImportRecord(
                     obj=mesh_obj,
                 )
-
         elif node.type_id == 3:
             obj = import_camera_object(context, node)
             obj.matrix_world = world_transforms[node_index]
-            # Flip camera objects
-            obj.rotation_euler = (0.0, math.radians(180.0), 0.0)
-
             node_records[node_index] = ImportRecord(obj=obj)
-
         else:
             obj = import_empty_object(context, node)
             obj.matrix_world = world_transforms[node_index]
-
             node_records[node_index] = ImportRecord(obj=obj)
 
     return node_records, armature_node_indexes
@@ -466,7 +457,6 @@ def import_armature_bones(
             edit_bone.length = 0.2
             edit_bone.matrix = bone_matrix
 
-            # Do not retain the EditBone itself.
             bone_records[bone_node_index] = (
                 armature_obj,
                 edit_bone.name,
@@ -531,12 +521,10 @@ def build_parent_map(
     scene_data: SceneData3DF,
 ) -> dict[int, int]:
     parent_map: dict[int, int] = {}
-
     for parent_index, node in enumerate(scene_data.nodes):
         for child_index in node.child_indexes:
             if child_index in parent_map:
                 raise ValueError(f"Node {child_index} has multiple parents")
-
             parent_map[child_index] = parent_index
 
     return parent_map
@@ -552,29 +540,22 @@ def apply_object_parenting(
 
     for node_index, record in node_records.items():
         parent_index = parent_map.get(node_index)
-
         if parent_index is None:
             record.obj.matrix_world = world_transforms[node_index]
             continue
 
         parent_node = scene_data.nodes[parent_index]
-
         if parent_node.type_id == 1:
-            # Source parent is a bone.
             armature_obj, bone_name = bone_records[parent_index]
-
             record.obj.parent = armature_obj
             record.obj.parent_type = "BONE"
             record.obj.parent_bone = bone_name
-
         else:
-            # Normal object parenting.
             parent_obj = node_records[parent_index].obj
-
             record.obj.parent = parent_obj
             record.obj.parent_type = "OBJECT"
 
-        # Restore the source transform after setting the parent.
+        # Restore source transform after reparenting
         record.obj.matrix_world = world_transforms[node_index]
 
 
@@ -590,12 +571,10 @@ def import_3df(
     )
 
     bone_records: dict[int, tuple[Object, str]] = {}
-
     for armature_node_index in armature_node_indexes:
         armature_obj = node_records[armature_node_index].armature_obj
         if armature_obj is None:
             continue
-
         import_armature_bones(
             context,
             scene_data,

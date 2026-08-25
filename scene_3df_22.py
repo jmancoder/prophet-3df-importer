@@ -122,10 +122,13 @@ def read_node(bs: BinaryReader) -> Node3DF:
             bs.seek(92, 1)
 
             # Read face groups
-            cur_off = bs.tell()
-            bs.seek(face_groups_off - HEADER_SIZE)
-            face_groups = [read_face_group(bs) for _ in range(face_groups_count)]
-            bs.seek(cur_off)
+            if face_groups_off > 0:
+                cur_off = bs.tell()
+                bs.seek(face_groups_off - HEADER_SIZE)
+                face_groups = [read_face_group(bs) for _ in range(face_groups_count)]
+                bs.seek(cur_off)
+            else:
+                face_groups = []
 
             return MeshNode3DF(
                 node_name,
