@@ -2,6 +2,8 @@ from dataclasses import dataclass
 from typing import NamedTuple
 
 from mathutils import Matrix
+import numpy as np
+import numpy.typing as npt
 
 from .binary_reader import BinaryReader
 
@@ -19,7 +21,11 @@ class MeshInfo3DF(NamedTuple):
 class FaceGroup3DF(NamedTuple):
     face_type: int
     face_idx_count: int
-    face_flags: int
+    bone_indexes: tuple[int, int, int, int]
+
+
+class BoneGroup3DF(NamedTuple):
+    bone_points: npt.NDArray
 
 
 @dataclass(frozen=True, slots=True)
@@ -34,6 +40,7 @@ class Node3DF:
 @dataclass(frozen=True, slots=True)
 class BoneNode3DF(Node3DF):
     unk_floats: list[float]
+    bone_groups: list[BoneGroup3DF]
 
 
 @dataclass(frozen=True, slots=True)
@@ -70,14 +77,36 @@ def read_mesh_info(bs: BinaryReader) -> MeshInfo3DF:
 def read_face_group(bs: BinaryReader) -> FaceGroup3DF:
     face_type = bs.read_uint16()
     face_count = bs.read_uint16()
-    face_flags = bs.read_uint32()
+    bone_indexes = bs.read_vec4B()
     bs.seek(8, 1)
 
     return FaceGroup3DF(
         face_type,
         face_count,
-        face_flags,
+        bone_indexes,
     )
+
+
+def read_bone_group(bs: BinaryReader) -> BoneGroup3DF:
+    bone_group_start = bs.tell()
+    bs.read_uint32()
+    bs.read_uint32()
+    bs.read_uint32()
+    bs.read_uint32()
+    bs.read_uint32()
+    bs.read_uint32()
+    bs.read_uint32()
+    bone_point_count = bs.read_uint32()
+    bone_point_off = bs.read_uint32()
+
+    bs.seek(bone_point_off - HEADER_SIZE)
+    bone_point_dtype = np.dtype([("floats", np.float32, 5)])
+    bone_points = np.frombuffer(
+        bs.getbuffer(), bone_point_dtype, bone_point_count, bs.tell()
+    )
+    bs.seek(bone_group_start)
+
+    return BoneGroup3DF(bone_points)
 
 
 def read_node(bs: BinaryReader) -> Node3DF:
@@ -92,8 +121,8 @@ def read_node(bs: BinaryReader) -> Node3DF:
     unk_vec_0 = bs.read_vec3f()
     unk_vec_1 = bs.read_vec3f()
     unk_floats_off = bs.read_uint32()
-    bs.read_int32()
-    bs.read_int32()
+    bone_group_count = bs.read_uint32()
+    bone_group_off = bs.read_uint32()
     transform_type = bs.read_uint32()
     transform = bs.read_loc_rot_scale()
     bs.read_vec3f()
@@ -144,6 +173,12 @@ def read_node(bs: BinaryReader) -> Node3DF:
             unk_floats = [bs.read_float() for _ in range(13)]
             bs.seek(52, 1)
 
+            if bone_group_count > 0:
+                bs.seek(bone_group_off - HEADER_SIZE)
+                bone_groups = [read_bone_group(bs) for _ in range(bone_group_count)]
+            else:
+                bone_groups = []
+
             return BoneNode3DF(
                 node_name,
                 node_type,
@@ -151,6 +186,7 @@ def read_node(bs: BinaryReader) -> Node3DF:
                 transform_type,
                 transform,
                 unk_floats,
+                bone_groups,
             )
         case _:
             bs.seek(104, 1)

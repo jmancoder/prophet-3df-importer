@@ -3,7 +3,7 @@ from typing import NamedTuple
 import zlib
 
 import bpy
-from bpy.types import Context, EditBone, Object
+from bpy.types import Context, EditBone, Object, VertexGroup
 import math
 from mathutils import Matrix
 import numpy as np
@@ -16,9 +16,15 @@ from . import scene_3df_26_ds
 from . import scene_3df_26_pc
 
 
+class TriangleGroup3DF(NamedTuple):
+    bone_indexes: tuple[int, int, int, int]
+    triangles: npt.NDArray
+    vertex_indices: npt.NDArray
+
+
 class MeshData3DF(NamedTuple):
     vertices: npt.NDArray
-    triangles: list[tuple[int, int, int]]
+    triangle_groups: list[TriangleGroup3DF]
 
 
 class SceneData3DF(NamedTuple):
@@ -39,7 +45,8 @@ def create_vertex_dtype(bitmask: int) -> npt.DTypeLike:
         blend_weight_count = 2
     if bitmask & 0x8:
         blend_weight_count = 3
-    fields.append((f"blend_weights", np.float32, blend_weight_count))
+    if blend_weight_count > 0:
+        fields.append((f"blend_weights", np.float32, blend_weight_count))
 
     if bitmask & 0x10:
         fields.append(("normal", np.float32, 3))
@@ -59,19 +66,19 @@ def create_vertex_dtype(bitmask: int) -> npt.DTypeLike:
     return np.dtype(fields)
 
 
-def tri_strips_to_triangles(indices: list[int]) -> list[tuple[int, int, int]]:
-    triangles: list[tuple[int, int, int]] = []
+def tri_strips_to_triangles(indices: npt.NDArray) -> npt.NDArray:
+    triangles = []
+
     for i in range(len(indices) - 2):
         if i % 2 == 0:
             tri = (indices[i], indices[i + 1], indices[i + 2])
         else:
             tri = (indices[i], indices[i + 2], indices[i + 1])
 
-        # Read triangle if it is not degenerate
         if tri[0] != tri[1] and tri[1] != tri[2] and tri[0] != tri[2]:
             triangles.append(tri)
 
-    return triangles
+    return np.asarray(triangles, dtype=np.int64).reshape(-1, 3)
 
 
 def decompress_chunk_stream(bs: BinaryReader) -> BinaryReader:
@@ -176,42 +183,54 @@ def read_3df(f: BufferedReader, platform: str) -> SceneData3DF:
         bs.seek(mesh_info.vertices_off)
         vertex_dtype = create_vertex_dtype(mesh_info.vertex_bitmask)
         vertices = np.frombuffer(
-            bs.read(node.vertex_count * vertex_dtype.itemsize),
+            bs.getbuffer(),
             vertex_dtype,
             node.vertex_count,
+            bs.tell(),
         )
 
         # Read faces
-        triangles: list[tuple[int, int, int]] = []
+        if version == 26:
+            face_dtype = np.uint32
+        else:
+            face_dtype = np.uint16
+        triangle_groups: list[TriangleGroup3DF] = []
         bs.seek(mesh_info.faces_off)
         for face_group in node.face_groups:
-            if face_group.face_type == 3:
-                # Read triangles
-                if version == 22 or version == 23:
-                    triangles.extend(
-                        [bs.read_vec3H() for _ in range(face_group.face_idx_count // 3)]
-                    )
-                else:
-                    triangles.extend(
-                        [bs.read_vec3I() for _ in range(face_group.face_idx_count // 3)]
-                    )
-            elif face_group.face_type == 1:
+            if face_group.face_type == 1:
                 # Read triangle strips
-                if version == 22 or version == 23:
-                    tri_strip_indices = [
-                        bs.read_uint16() for _ in range(face_group.face_idx_count)
-                    ]
-                else:
-                    tri_strip_indices = [
-                        bs.read_uint32() for _ in range(face_group.face_idx_count)
-                    ]
-                triangles.extend(tri_strips_to_triangles(tri_strip_indices))
+                tri_strip_indices = np.frombuffer(
+                    bs.getbuffer(), face_dtype, face_group.face_idx_count, bs.tell()
+                )
+                bs.seek(tri_strip_indices.nbytes, 1)
+                vertex_indices = np.unique(tri_strip_indices)
+                triangle_groups.append(
+                    TriangleGroup3DF(
+                        face_group.bone_indexes,
+                        tri_strips_to_triangles(tri_strip_indices),
+                        vertex_indices,
+                    )
+                )
+            elif face_group.face_type == 3:
+                # Read triangles
+                tri_indices = np.frombuffer(
+                    bs.getbuffer(), face_dtype, face_group.face_idx_count, bs.tell()
+                )
+                bs.seek(tri_indices.nbytes, 1)
+                vertex_indices = np.unique(tri_indices)
+                triangle_groups.append(
+                    TriangleGroup3DF(
+                        face_group.bone_indexes,
+                        tri_indices.reshape(-1, 3),
+                        vertex_indices,
+                    )
+                )
             else:
                 print("WARNING: Unimplemented face type " + str(face_group.face_type))
 
         mesh_data_map[i] = MeshData3DF(
             vertices,
-            triangles,
+            triangle_groups,
         )
 
     return SceneData3DF(nodes, mesh_data_map)
@@ -234,10 +253,13 @@ def import_camera_object(context: Context, node: scene_3df_22.Node3DF):
 
 
 def import_mesh_object(
-    context: Context,
-    node: scene_3df_22.Node3DF,
-    mesh_data: MeshData3DF,
+    context: Context, scene_data: SceneData3DF, node_index: int
 ) -> Object:
+    node = scene_data.nodes[node_index]
+    if node_index not in scene_data.mesh_map:
+        return import_empty_object(context, node)
+    mesh_data = scene_data.mesh_map[node_index]
+
     # Create empty objects for meshes without vertex positions
     if (
         mesh_data.vertices.dtype.names is None
@@ -246,13 +268,20 @@ def import_mesh_object(
         print(f"WARNING: Mesh node {node.name} contains no positions")
         return import_empty_object(context, node)
 
+    # Combine triangle groups
+    triangles = np.concatenate(
+        [tri_group.triangles for tri_group in mesh_data.triangle_groups]
+    )
+
     # Import positions and triangles
     mesh = bpy.data.meshes.new(node.name)
     mesh.from_pydata(
         mesh_data.vertices["position"],
         [],
-        mesh_data.triangles,
+        triangles,
     )
+    mesh.validate()
+    mesh.update()
 
     # Import vertex UV layers
     if "uvs" in mesh_data.vertices.dtype.names:
@@ -278,13 +307,40 @@ def import_mesh_object(
             mesh_data.vertices["color"].flatten(),
         )
 
-    # Validate mesh
-    mesh.validate()
-    mesh.update()
-
     # Create mesh object
     mesh_obj = bpy.data.objects.new(node.name, mesh)
     context.collection.objects.link(mesh_obj)
+
+    # Create and assign vertex groups
+    if "blend_weights" not in mesh_data.vertices.dtype.names:
+        return mesh_obj
+    vertex_group_map: dict[int, VertexGroup] = {}
+    weight_groups = mesh_data.vertices["blend_weights"]
+    for tri_group in mesh_data.triangle_groups:
+        bone_indexes = tri_group.bone_indexes
+        for vertex_idx in tri_group.vertex_indices:
+            weights: list[float] = weight_groups[vertex_idx].tolist()
+            if len(weights) == 0:
+                continue
+            if len(weights) < 4:
+                weights.append(1.0 - sum(weights))
+                for _ in range(4 - len(weights)):
+                    weights.append(0.0)
+
+            for i, weight in enumerate(weights):
+                if weight <= 0.0:
+                    continue
+                # Treat bone indexes as relative to the mesh node
+                bone_node_idx = bone_indexes[i] + node_index
+                if bone_node_idx not in vertex_group_map:
+                    vertex_group_map[bone_node_idx] = mesh_obj.vertex_groups.new(
+                        name=scene_data.nodes[bone_node_idx].name
+                    )
+                vertex_group_map[bone_node_idx].add(
+                    [int(vertex_idx)],
+                    weight,
+                    "ADD",
+                )
 
     return mesh_obj
 
@@ -304,28 +360,28 @@ def create_objects(
             # Skip bones until next pass
             obj = None
         case 0:
-            if node_index in scene_data.mesh_map:
-                obj = import_mesh_object(
-                    context,
-                    node,
-                    scene_data.mesh_map[node_index],
-                )
-            else:
-                obj = import_empty_object(context, node)
+            obj = import_mesh_object(
+                context,
+                scene_data,
+                node_index,
+            )
             obj.matrix_world = world_transform
 
-            # Parent mesh to armature if it has child bones
-            if any(
+            # Parent mesh to armature if it has any child bones
+            if obj.data is not None and any(
                 scene_data.nodes[child_idx].type_id == 1
                 for child_idx in scene_data.nodes[node_index].child_indexes
             ):
                 armature = bpy.data.armatures.new(node.name)
                 armature_obj = bpy.data.objects.new(node.name, armature)
+                armature_obj.matrix_world = obj.matrix_world
                 context.collection.objects.link(armature_obj)
                 armature_indexes.append(node_index)
 
-                # Work with the armature instead of the mesh
-                armature_obj.matrix_world = obj.matrix_world
+                modifier = obj.modifiers.new("Armature", "ARMATURE")
+                modifier.object = armature_obj
+
+                # Replace mesh reference with armature
                 obj.parent = armature_obj
                 obj = armature_obj
         case 3:
@@ -396,17 +452,19 @@ def import_3df(context: Context, scene_data: SceneData3DF) -> None:
 
     bone_map: dict[int, tuple[str, Object]] = {}
     for armature_idx in armature_indexes:
+        armature_node = scene_data.nodes[armature_idx]
         armature_obj = object_map[armature_idx]
         context.view_layer.objects.active = armature_obj
         bpy.ops.object.mode_set(mode="EDIT")
-        create_bones(
-            scene_data,
-            bone_map,
-            armature_idx,
-            armature_obj,
-            None,
-            Matrix.Identity(4),
-        )
+        for root_bone_idx in armature_node.child_indexes:
+            create_bones(
+                scene_data,
+                bone_map,
+                root_bone_idx,
+                armature_obj,
+                None,
+                Matrix.Identity(4),
+            )
         bpy.ops.object.mode_set(mode="OBJECT")
 
     # Reparent objects

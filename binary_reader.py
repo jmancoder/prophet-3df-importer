@@ -36,6 +36,9 @@ class BinaryReader(BytesIO):
     def read_int32(self) -> int:
         return int.from_bytes(self.read(4), signed=True, byteorder=self.byte_order)
 
+    def read_vec4B(self) -> tuple[int, int, int, int]:
+        return struct.unpack(self.endian_symbol + "4B", self.read(4))
+
     def read_vec3H(self) -> tuple[int, int, int]:
         return struct.unpack(self.endian_symbol + "3H", self.read(6))
 

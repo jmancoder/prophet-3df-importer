@@ -32,8 +32,8 @@ def read_node(bs: BinaryReader) -> scene_3df_22.Node3DF:
     unk_vec_0 = bs.read_vec3f()
     unk_vec_1 = bs.read_vec3f()
     unk_floats_off = bs.read_uint32()
-    bs.read_int32()
-    bs.read_int32()
+    bone_group_count = bs.read_uint32()
+    bone_group_off = bs.read_uint32()
     transform_type = bs.read_uint32()
     transform = bs.read_loc_rot_scale()
     bs.read_vec3f()
@@ -47,10 +47,10 @@ def read_node(bs: BinaryReader) -> scene_3df_22.Node3DF:
 
     # Read child indexes
     if child_index_count > 0:
-        cur_off = bs.tell()
+        node_end_off = bs.tell()
         bs.seek(child_index_off - scene_3df_22.HEADER_SIZE)
         child_indexes = [bs.read_uint32() for _ in range(child_index_count)]
-        bs.seek(cur_off)
+        bs.seek(node_end_off)
     else:
         child_indexes = []
 
@@ -63,12 +63,12 @@ def read_node(bs: BinaryReader) -> scene_3df_22.Node3DF:
 
             # Read face groups
             if face_groups_off > 0:
-                cur_off = bs.tell()
+                node_end_off = bs.tell()
                 bs.seek(face_groups_off - scene_3df_22.HEADER_SIZE)
                 face_groups = [
                     scene_3df_22.read_face_group(bs) for _ in range(face_groups_count)
                 ]
-                bs.seek(cur_off)
+                bs.seek(node_end_off)
             else:
                 face_groups = []
 
@@ -86,6 +86,16 @@ def read_node(bs: BinaryReader) -> scene_3df_22.Node3DF:
             unk_floats = [bs.read_float() for _ in range(13)]
             bs.seek(52, 1)
 
+            if bone_group_count > 0:
+                node_end_off = bs.tell()
+                bs.seek(bone_group_off - scene_3df_22.HEADER_SIZE)
+                bone_groups = [
+                    scene_3df_22.read_bone_group(bs) for _ in range(bone_group_count)
+                ]
+                bs.seek(node_end_off)
+            else:
+                bone_groups = []
+
             return scene_3df_22.BoneNode3DF(
                 node_name,
                 node_type,
@@ -93,6 +103,7 @@ def read_node(bs: BinaryReader) -> scene_3df_22.Node3DF:
                 transform_type,
                 transform,
                 unk_floats,
+                bone_groups,
             )
         case _:
             bs.seek(104, 1)
