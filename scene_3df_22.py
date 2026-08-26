@@ -136,10 +136,10 @@ def read_node(bs: BinaryReader) -> Node3DF:
 
     # Read child indexes
     if child_index_count > 0:
-        cur_off = bs.tell()
+        node_end_off = bs.tell()
         bs.seek(child_index_off - HEADER_SIZE)
         child_indexes = [bs.read_uint32() for _ in range(child_index_count)]
-        bs.seek(cur_off)
+        bs.seek(node_end_off)
     else:
         child_indexes = []
 
@@ -152,10 +152,10 @@ def read_node(bs: BinaryReader) -> Node3DF:
 
             # Read face groups
             if face_groups_off > 0:
-                cur_off = bs.tell()
+                node_end_off = bs.tell()
                 bs.seek(face_groups_off - HEADER_SIZE)
                 face_groups = [read_face_group(bs) for _ in range(face_groups_count)]
-                bs.seek(cur_off)
+                bs.seek(node_end_off)
             else:
                 face_groups = []
 
@@ -174,8 +174,10 @@ def read_node(bs: BinaryReader) -> Node3DF:
             bs.seek(52, 1)
 
             if bone_group_count > 0:
+                node_end_off = bs.tell()
                 bs.seek(bone_group_off - HEADER_SIZE)
                 bone_groups = [read_bone_group(bs) for _ in range(bone_group_count)]
+                bs.seek(node_end_off)
             else:
                 bone_groups = []
 
