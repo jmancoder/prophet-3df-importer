@@ -26,7 +26,7 @@ def read_node(bs: BinaryReader) -> scene_3df_22.Node3DF:
     bs.read_int32()
     bs.read_int32()
     child_index_count = bs.read_int32()
-    unk_id = bs.read_int32()
+    internal_idx = bs.read_int32()
     child_index_off = bs.read_uint32()
     bs.read_int32()
     unk_vec_0 = bs.read_vec3f()
@@ -75,6 +75,7 @@ def read_node(bs: BinaryReader) -> scene_3df_22.Node3DF:
             return scene_3df_22.MeshNode3DF(
                 node_name,
                 node_type,
+                internal_idx,
                 child_indexes,
                 transform_type,
                 transform,
@@ -99,6 +100,7 @@ def read_node(bs: BinaryReader) -> scene_3df_22.Node3DF:
             return scene_3df_22.BoneNode3DF(
                 node_name,
                 node_type,
+                internal_idx,
                 child_indexes,
                 transform_type,
                 transform,
@@ -111,6 +113,7 @@ def read_node(bs: BinaryReader) -> scene_3df_22.Node3DF:
             return scene_3df_22.Node3DF(
                 node_name,
                 node_type,
+                internal_idx,
                 child_indexes,
                 transform_type,
                 transform,

@@ -333,13 +333,23 @@ def import_mesh_object(
             for i, weight in enumerate(weights):
                 if weight <= 0.0:
                     continue
-                # Treat bone indexes as relative to the mesh node
-                bone_node_idx = bone_indexes[i] + node_index
-                if bone_node_idx not in vertex_group_map:
-                    vertex_group_map[bone_node_idx] = mesh_obj.vertex_groups.new(
-                        name=scene_data.nodes[bone_node_idx].name
+                bone_idx = bone_indexes[i]
+                if bone_idx not in vertex_group_map:
+                    bone_name = None
+                    for j in range(node_index, len(scene_data.nodes)):
+                        bone_node = scene_data.nodes[j]
+                        if bone_node.internal_index == bone_idx:
+                            bone_name = bone_node.name
+                            break
+                    if bone_name is None:
+                        print(
+                            f"WARNING: Failed to find node with index {bone_idx} for vertex group"
+                        )
+                        bone_name = str(bone_idx)
+                    vertex_group_map[bone_idx] = mesh_obj.vertex_groups.new(
+                        name=bone_name
                     )
-                vertex_group_map[bone_node_idx].add(
+                vertex_group_map[bone_idx].add(
                     [int(vertex_idx)],
                     weight,
                     "ADD",

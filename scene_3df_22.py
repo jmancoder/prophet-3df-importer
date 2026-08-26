@@ -32,6 +32,7 @@ class BoneGroup3DF(NamedTuple):
 class Node3DF:
     name: str
     type_id: int
+    internal_index: int
     child_indexes: list[int]
     transform_type: int
     transform: Matrix
@@ -115,7 +116,7 @@ def read_node(bs: BinaryReader) -> Node3DF:
     bs.read_int32()
     bs.read_int32()
     child_index_count = bs.read_int32()
-    unk_id = bs.read_int32()
+    internal_idx = bs.read_int32()
     child_index_off = bs.read_uint32()
     bs.read_int32()
     unk_vec_0 = bs.read_vec3f()
@@ -162,6 +163,7 @@ def read_node(bs: BinaryReader) -> Node3DF:
             return MeshNode3DF(
                 node_name,
                 node_type,
+                internal_idx,
                 child_indexes,
                 transform_type,
                 transform,
@@ -184,6 +186,7 @@ def read_node(bs: BinaryReader) -> Node3DF:
             return BoneNode3DF(
                 node_name,
                 node_type,
+                internal_idx,
                 child_indexes,
                 transform_type,
                 transform,
@@ -196,6 +199,7 @@ def read_node(bs: BinaryReader) -> Node3DF:
             return Node3DF(
                 node_name,
                 node_type,
+                internal_idx,
                 child_indexes,
                 transform_type,
                 transform,
