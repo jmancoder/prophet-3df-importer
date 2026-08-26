@@ -269,9 +269,12 @@ def import_mesh_object(
         return import_empty_object(context, node)
 
     # Combine triangle groups
-    triangles = np.concatenate(
-        [tri_group.triangles for tri_group in mesh_data.triangle_groups]
-    )
+    if len(mesh_data.triangle_groups) > 0:
+        triangles = np.concatenate(
+            [tri_group.triangles for tri_group in mesh_data.triangle_groups]
+        )
+    else:
+        triangles = []
 
     # Import positions and triangles
     mesh = bpy.data.meshes.new(node.name)
