@@ -10,6 +10,7 @@ import numpy as np
 import numpy.typing as npt
 
 from .binary_reader import BinaryReader
+from . import scene_3df_20
 from . import scene_3df_22
 from . import scene_3df_23
 from . import scene_3df_26_ds
@@ -28,7 +29,7 @@ class MeshData3DF(NamedTuple):
 
 
 class SceneData3DF(NamedTuple):
-    nodes: list[scene_3df_22.Node3DF]
+    nodes: list[scene_3df_20.Node3DF]
     mesh_map: dict[int, MeshData3DF]
 
 
@@ -111,10 +112,10 @@ def read_3df(f: BufferedReader, platform: str) -> SceneData3DF:
 
     # Load and read version-specific header
     version = bs.read_uint32()
-    header_size = scene_3df_22.HEADER_SIZE
     if version == 22 or version == 23:
+        header_size = scene_3df_22.HEADER_SIZE
         bs = BinaryReader(f.read(header_size - 8))
-        header = scene_3df_23.read_header(bs)
+        header = scene_3df_22.read_header(bs)
     elif version == 26:
         if platform == "DS":
             header_size = scene_3df_26_ds.HEADER_SIZE
@@ -124,11 +125,13 @@ def read_3df(f: BufferedReader, platform: str) -> SceneData3DF:
                 f"Unimplemented platform {platform} for version {version}"
             )
         elif platform == "PC":
+            header_size = scene_3df_26_pc.HEADER_SIZE
             bs = BinaryReader(f.read(header_size - 8))
             header = scene_3df_26_pc.read_header(bs)
         elif platform == "PS2":
+            header_size = scene_3df_22.HEADER_SIZE
             bs = BinaryReader(f.read(header_size - 8))
-            header = scene_3df_23.read_header(bs)
+            header = scene_3df_22.read_header(bs)
             raise NotImplementedError(
                 f"Unimplemented platform {platform} for version {version}"
             )
@@ -140,23 +143,30 @@ def read_3df(f: BufferedReader, platform: str) -> SceneData3DF:
         raise NotImplementedError(f"Unimplemented 3DF version {version}")
 
     # Load nodes chunk
-    bs = BinaryReader(f.read(header.nodes_chunk_size))
+    bs = BinaryReader(f.read(header.node_chunk_size))
     if header.compress_mode == 1:
         bs = decompress_chunk_stream(bs)
 
     # Read materials
-    bs.seek(header.materials_off - header_size)
-    materials = [scene_3df_22.read_material(bs) for _ in range(header.materials_count)]
+    bs.seek(header.material_off - header_size)
+    if version == 20:
+        materials = [
+            scene_3df_20.read_material(bs) for _ in range(header.material_count)
+        ]
+    else:
+        materials = [
+            scene_3df_22.read_material(bs) for _ in range(header.material_count)
+        ]
 
     # Read nodes
-    bs.seek(header.nodes_off - header_size)
+    bs.seek(header.node_off - header_size)
     if version == 22:
-        nodes = [scene_3df_22.read_node(bs) for _ in range(header.nodes_count)]
+        nodes = [scene_3df_22.read_node(bs) for _ in range(header.node_count)]
     else:
-        nodes = [scene_3df_23.read_node(bs) for _ in range(header.nodes_count)]
+        nodes = [scene_3df_23.read_node(bs) for _ in range(header.node_count)]
 
     # Load mesh chunk
-    f.seek(header_size + header.nodes_chunk_size)
+    f.seek(header_size + header.node_chunk_size)
     bs = BinaryReader(f.read(header.mesh_chunk_size))
     if header.compress_mode == 1:
         bs = decompress_chunk_stream(bs)
@@ -164,18 +174,18 @@ def read_3df(f: BufferedReader, platform: str) -> SceneData3DF:
     # Read mesh info entries
     if version == 22 or version == 23:
         mesh_info_entries = [
-            scene_3df_22.read_mesh_info(bs) for _ in range(header.nodes_count)
+            scene_3df_22.read_mesh_info(bs) for _ in range(header.node_count)
         ]
     else:
         mesh_info_entries = [
-            scene_3df_26_pc.read_mesh_info(bs) for _ in range(header.nodes_count)
+            scene_3df_26_pc.read_mesh_info(bs) for _ in range(header.node_count)
         ]
 
     # Read meshes
     mesh_data_map: dict[int, MeshData3DF] = {}
     for i, (node, mesh_info) in enumerate(zip(nodes, mesh_info_entries)):
         if mesh_info.vertex_bitmask == 0 or not isinstance(
-            node, scene_3df_22.MeshNode3DF
+            node, scene_3df_20.MeshNode3DF
         ):
             continue
 
@@ -236,7 +246,7 @@ def read_3df(f: BufferedReader, platform: str) -> SceneData3DF:
     return SceneData3DF(nodes, mesh_data_map)
 
 
-def import_empty_object(context: Context, node: scene_3df_22.Node3DF) -> Object:
+def import_empty_object(context: Context, node: scene_3df_20.Node3DF) -> Object:
     node_obj = bpy.data.objects.new(node.name, None)
     node_obj.empty_display_size = 0.2
     context.collection.objects.link(node_obj)
@@ -244,7 +254,7 @@ def import_empty_object(context: Context, node: scene_3df_22.Node3DF) -> Object:
     return node_obj
 
 
-def import_camera_object(context: Context, node: scene_3df_22.Node3DF):
+def import_camera_object(context: Context, node: scene_3df_20.Node3DF):
     camera = bpy.data.cameras.new(node.name)
     camera_obj = bpy.data.objects.new(node.name, camera)
     context.collection.objects.link(camera_obj)

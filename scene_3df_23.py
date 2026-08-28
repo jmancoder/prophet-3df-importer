@@ -1,26 +1,9 @@
-from typing import NamedTuple
-
 from .binary_reader import BinaryReader
+from . import scene_3df_20
 from . import scene_3df_22
 
 
-class Header3DF(NamedTuple):
-    unk_int_0: int
-    unk_int_1: int
-    compress_mode: int
-    nodes_chunk_size: int
-    unk_chunk_size: int
-    mesh_chunk_size: int
-    textures_chunk_size: int
-    materials_count: int
-    materials_off: int
-    unk_int_2: int
-    unk_int_3: int
-    nodes_count: int
-    nodes_off: int
-
-
-def read_node(bs: BinaryReader) -> scene_3df_22.Node3DF:
+def read_node(bs: BinaryReader) -> scene_3df_20.Node3DF:
     node_name = bs.read_string_block(16)
     node_type = bs.read_uint32()
     bs.read_int32()
@@ -66,13 +49,13 @@ def read_node(bs: BinaryReader) -> scene_3df_22.Node3DF:
                 node_end_off = bs.tell()
                 bs.seek(face_groups_off - scene_3df_22.HEADER_SIZE)
                 face_groups = [
-                    scene_3df_22.read_face_group(bs) for _ in range(face_groups_count)
+                    scene_3df_20.read_face_group(bs) for _ in range(face_groups_count)
                 ]
                 bs.seek(node_end_off)
             else:
                 face_groups = []
 
-            return scene_3df_22.MeshNode3DF(
+            return scene_3df_20.MeshNode3DF(
                 node_name,
                 node_type,
                 internal_idx,
@@ -91,13 +74,13 @@ def read_node(bs: BinaryReader) -> scene_3df_22.Node3DF:
                 node_end_off = bs.tell()
                 bs.seek(bone_group_off - scene_3df_22.HEADER_SIZE)
                 bone_groups = [
-                    scene_3df_22.read_bone_group(bs) for _ in range(bone_group_count)
+                    scene_3df_20.read_bone_group(bs) for _ in range(bone_group_count)
                 ]
                 bs.seek(node_end_off)
             else:
                 bone_groups = []
 
-            return scene_3df_22.BoneNode3DF(
+            return scene_3df_20.BoneNode3DF(
                 node_name,
                 node_type,
                 internal_idx,
@@ -110,7 +93,7 @@ def read_node(bs: BinaryReader) -> scene_3df_22.Node3DF:
         case _:
             bs.seek(104, 1)
 
-            return scene_3df_22.Node3DF(
+            return scene_3df_20.Node3DF(
                 node_name,
                 node_type,
                 internal_idx,
@@ -118,37 +101,3 @@ def read_node(bs: BinaryReader) -> scene_3df_22.Node3DF:
                 transform_type,
                 transform,
             )
-
-
-def read_header(bs: BinaryReader) -> Header3DF:
-    unk_int_0 = bs.read_uint32()
-    unk_int_1 = bs.read_uint32()
-    compress_mode = bs.read_uint32()
-    nodes_chunk_size = bs.read_uint32()
-    unk_chunk_size = bs.read_uint32()
-    mesh_chunk_size = bs.read_uint32()
-    bs.seek(124, 1)
-    textures_chunk_size = bs.read_uint32()
-    bs.seek(128, 1)
-    materials_count = bs.read_uint32()
-    materials_off = bs.read_uint32()
-    unk_int_2 = bs.read_uint32()
-    unk_int_3 = bs.read_uint32()
-    nodes_count = bs.read_uint32()
-    nodes_off = bs.read_uint32()
-
-    return Header3DF(
-        unk_int_0,
-        unk_int_1,
-        compress_mode,
-        nodes_chunk_size,
-        unk_chunk_size,
-        mesh_chunk_size,
-        textures_chunk_size,
-        materials_count,
-        materials_off,
-        unk_int_2,
-        unk_int_3,
-        nodes_count,
-        nodes_off,
-    )

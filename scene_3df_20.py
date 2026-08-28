@@ -1,15 +1,18 @@
+from dataclasses import dataclass
 from typing import NamedTuple
 
-from .binary_reader import BinaryReader
-from . import scene_3df_20
+from mathutils import Matrix
+import numpy as np
+import numpy.typing as npt
 
-HEADER_SIZE = 412
+from .binary_reader import BinaryReader
+
+HEADER_SIZE = 176
 
 
 class Header3DF(NamedTuple):
     compress_mode: int
     node_chunk_size: int
-    unk_chunk_size: int
     mesh_chunk_size: int
     texture_chunk_size: int
     material_count: int
@@ -18,60 +21,93 @@ class Header3DF(NamedTuple):
     node_off: int
 
 
+class Material3DF(NamedTuple):
+    name: str
+    unk_count: int
+    unk_off: int
+    color: tuple[int, int, int, int]
+
+
+class FaceGroup3DF(NamedTuple):
+    face_type: int
+    face_idx_count: int
+    bone_indexes: tuple[int, int, int, int]
+
+
+class BoneGroup3DF(NamedTuple):
+    bone_points: npt.NDArray
+
+
+@dataclass(frozen=True, slots=True)
+class Node3DF:
+    name: str
+    type_id: int
+    internal_index: int
+    child_indexes: list[int]
+    transform_type: int
+    transform: Matrix
+
+
+@dataclass(frozen=True, slots=True)
+class BoneNode3DF(Node3DF):
+    unk_floats: list[float]
+    bone_groups: list[BoneGroup3DF]
+
+
+@dataclass(frozen=True, slots=True)
+class MeshNode3DF(Node3DF):
+    vertex_count: int
+    face_idx_count: int
+    face_groups: list[FaceGroup3DF]
+
+
 class MeshInfo3DF(NamedTuple):
-    vertex_bitmask: int
-    unk_int: int
-    unk_float: float
     vertices_off: int
     faces_off: int
 
 
 def read_header(bs: BinaryReader) -> Header3DF:
     bs.read_uint32()
-    bs.read_uint32()
     compress_mode = bs.read_uint32()
     node_chunk_size = bs.read_uint32()
-    unk_chunk_size = bs.read_uint32()
     mesh_chunk_size = bs.read_uint32()
-    bs.seek(124, 1)
+    bs.read_uint32()
+    bs.read_uint32()
     texture_chunk_size = bs.read_uint32()
-    bs.seek(128, 1)
     material_count = bs.read_uint32()
     material_off = bs.read_uint32()
     bs.read_uint32()
     bs.read_uint32()
-    node_count = bs.read_uint32()
-    node_off = bs.read_uint32()
+    nodes_count = bs.read_uint32()
+    nodes_off = bs.read_uint32()
 
     return Header3DF(
         compress_mode,
         node_chunk_size,
-        unk_chunk_size,
         mesh_chunk_size,
         texture_chunk_size,
         material_count,
         material_off,
-        node_count,
-        node_off,
+        nodes_count,
+        nodes_off,
     )
 
 
-def read_material(bs: BinaryReader) -> scene_3df_20.Material3DF:
-    name = bs.read_string_block(16)
-    bs.read_uint32()
+def read_material(bs: BinaryReader) -> Material3DF:
+    name = bs.read_string_block(12)
     unk_count = bs.read_uint32()
     unk_off = bs.read_uint32()
     color = bs.read_vec4B()
-    bs.read_int32()
+    bs.read_uint32()
+    bs.read_float()
     bs.read_float()
     bs.read_int32()
     bs.read_int32()
     bs.read_int32()
     bs.read_int32()
-    bs.read_uint32()
     bs.seek(44, 1)
 
-    return scene_3df_20.Material3DF(
+    return Material3DF(
         name,
         unk_count,
         unk_off,
@@ -79,17 +115,49 @@ def read_material(bs: BinaryReader) -> scene_3df_20.Material3DF:
     )
 
 
-def read_node(bs: BinaryReader) -> scene_3df_20.Node3DF:
-    node_name = bs.read_string_block(16)
+def read_face_group(bs: BinaryReader) -> FaceGroup3DF:
+    face_type = bs.read_uint16()
+    face_count = bs.read_uint16()
+    bone_indexes = bs.read_vec4B()
+    bs.seek(8, 1)
+
+    return FaceGroup3DF(
+        face_type,
+        face_count,
+        bone_indexes,
+    )
+
+
+def read_bone_group(bs: BinaryReader) -> BoneGroup3DF:
+    bone_group_start = bs.tell()
+    bs.read_uint32()
+    bs.read_uint32()
+    bs.read_uint32()
+    bs.read_uint32()
+    bs.read_uint32()
+    bs.read_uint32()
+    bs.read_uint32()
+    bone_point_count = bs.read_uint32()
+    bone_point_off = bs.read_uint32()
+
+    bs.seek(bone_point_off - HEADER_SIZE)
+    bone_point_dtype = np.dtype([("floats", np.float32, 5)])
+    bone_points = np.frombuffer(
+        bs.getbuffer(), bone_point_dtype, bone_point_count, bs.tell()
+    )
+    bs.seek(bone_group_start)
+
+    return BoneGroup3DF(bone_points)
+
+
+def read_node(bs: BinaryReader) -> Node3DF:
+    node_name = bs.read_string_block(12)
     node_type = bs.read_uint32()
-    bs.read_int32()
     bs.read_int32()
     child_index_count = bs.read_int32()
     internal_idx = bs.read_int32()
     child_index_off = bs.read_uint32()
-    bs.read_int32()
-    unk_vec_0 = bs.read_vec3f()
-    unk_vec_1 = bs.read_vec3f()
+    bs.seek(124, 1)
     unk_floats_off = bs.read_uint32()
     bone_group_count = bs.read_uint32()
     bone_group_off = bs.read_uint32()
@@ -98,10 +166,8 @@ def read_node(bs: BinaryReader) -> scene_3df_20.Node3DF:
     bs.read_vec3f()
     bs.read_int32()
     bs.read_float()
-    bounds_min = bs.read_vec3f()
-    bounds_max = bs.read_vec3f()
-    bs.seek(68, 1)
-    face_groups_off = bs.read_uint32()
+    bs.seek(28, 1)
+    face_group_off = bs.read_uint32()
     bs.seek(28, 1)
 
     # Read child indexes
@@ -117,21 +183,19 @@ def read_node(bs: BinaryReader) -> scene_3df_20.Node3DF:
         case 0:
             vertex_count = bs.read_uint32()
             face_idx_count = bs.read_uint32()
-            face_groups_count = bs.read_uint32()
+            face_group_count = bs.read_uint32()
             bs.seek(92, 1)
 
             # Read face groups
-            if face_groups_off > 0:
+            if face_group_off > 0:
                 node_end_off = bs.tell()
-                bs.seek(face_groups_off - HEADER_SIZE)
-                face_groups = [
-                    scene_3df_20.read_face_group(bs) for _ in range(face_groups_count)
-                ]
+                bs.seek(face_group_off - HEADER_SIZE)
+                face_groups = [read_face_group(bs) for _ in range(face_group_count)]
                 bs.seek(node_end_off)
             else:
                 face_groups = []
 
-            return scene_3df_20.MeshNode3DF(
+            return MeshNode3DF(
                 node_name,
                 node_type,
                 internal_idx,
@@ -149,14 +213,12 @@ def read_node(bs: BinaryReader) -> scene_3df_20.Node3DF:
             if bone_group_count > 0:
                 node_end_off = bs.tell()
                 bs.seek(bone_group_off - HEADER_SIZE)
-                bone_groups = [
-                    scene_3df_20.read_bone_group(bs) for _ in range(bone_group_count)
-                ]
+                bone_groups = [read_bone_group(bs) for _ in range(bone_group_count)]
                 bs.seek(node_end_off)
             else:
                 bone_groups = []
 
-            return scene_3df_20.BoneNode3DF(
+            return BoneNode3DF(
                 node_name,
                 node_type,
                 internal_idx,
@@ -169,7 +231,7 @@ def read_node(bs: BinaryReader) -> scene_3df_20.Node3DF:
         case _:
             bs.seek(104, 1)
 
-            return scene_3df_20.Node3DF(
+            return Node3DF(
                 node_name,
                 node_type,
                 internal_idx,
@@ -180,16 +242,11 @@ def read_node(bs: BinaryReader) -> scene_3df_20.Node3DF:
 
 
 def read_mesh_info(bs: BinaryReader) -> MeshInfo3DF:
-    vertex_bitmask = bs.read_uint32()
-    unk_int = bs.read_uint32()
-    unk_float = bs.read_float()
+    bs.read_uint32()
     vertices_off = bs.read_uint32()
     faces_off = bs.read_uint32()
 
     return MeshInfo3DF(
-        vertex_bitmask,
-        unk_int,
-        unk_float,
         vertices_off,
         faces_off,
     )
