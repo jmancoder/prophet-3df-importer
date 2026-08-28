@@ -34,8 +34,12 @@ class FaceGroup3DF(NamedTuple):
     bone_indexes: tuple[int, int, int, int]
 
 
-class BoneGroup3DF(NamedTuple):
-    bone_points: npt.NDArray
+class Key3DF(NamedTuple):
+    floats: list[float]
+
+
+class Track3DF(NamedTuple):
+    keys: list[Key3DF]
 
 
 @dataclass(frozen=True, slots=True)
@@ -46,12 +50,13 @@ class Node3DF:
     child_indexes: list[int]
     transform_type: int
     transform: Matrix
+    tracks: list[Track3DF]
 
 
 @dataclass(frozen=True, slots=True)
 class BoneNode3DF(Node3DF):
     unk_floats: list[float]
-    bone_groups: list[BoneGroup3DF]
+    tracks: list[Track3DF]
 
 
 @dataclass(frozen=True, slots=True)
@@ -128,26 +133,29 @@ def read_face_group(bs: BinaryReader) -> FaceGroup3DF:
     )
 
 
-def read_bone_group(bs: BinaryReader) -> BoneGroup3DF:
-    bone_group_start = bs.tell()
-    bs.read_uint32()
-    bs.read_uint32()
-    bs.read_uint32()
-    bs.read_uint32()
-    bs.read_uint32()
-    bs.read_uint32()
-    bs.read_uint32()
-    bone_point_count = bs.read_uint32()
-    bone_point_off = bs.read_uint32()
+def read_keyframe(bs: BinaryReader) -> Key3DF:
+    floats = [bs.read_float() for _ in range(6)]
+    return Key3DF(floats)
 
-    bs.seek(bone_point_off - HEADER_SIZE)
-    bone_point_dtype = np.dtype([("floats", np.float32, 5)])
-    bone_points = np.frombuffer(
-        bs.getbuffer(), bone_point_dtype, bone_point_count, bs.tell()
-    )
-    bs.seek(bone_group_start)
 
-    return BoneGroup3DF(bone_points)
+def read_track(bs: BinaryReader) -> Track3DF:
+    track_start = bs.tell()
+    bs.read_uint32()
+    bs.read_uint32()
+    bs.read_uint32()
+    bs.read_uint32()
+    bs.read_uint32()
+    bs.read_uint32()
+    bs.read_uint32()
+    key_count = bs.read_uint32()
+    key_off = bs.read_uint32()
+
+    # Read keyframes
+    bs.seek(key_off - HEADER_SIZE)
+    keys = [read_keyframe(bs) for _ in range(key_count)]
+    bs.seek(track_start)
+
+    return Track3DF(keys)
 
 
 def read_node(bs: BinaryReader) -> Node3DF:
@@ -159,8 +167,8 @@ def read_node(bs: BinaryReader) -> Node3DF:
     child_index_off = bs.read_uint32()
     bs.seek(124, 1)
     unk_floats_off = bs.read_uint32()
-    bone_group_count = bs.read_uint32()
-    bone_group_off = bs.read_uint32()
+    track_count = bs.read_uint32()
+    track_off = bs.read_uint32()
     transform_type = bs.read_uint32()
     transform = bs.read_loc_rot_scale()
     bs.read_vec3f()
@@ -178,6 +186,15 @@ def read_node(bs: BinaryReader) -> Node3DF:
         bs.seek(node_end_off)
     else:
         child_indexes = []
+
+    # Read animation tracks
+    if track_count > 0:
+        node_end_off = bs.tell()
+        bs.seek(track_off - HEADER_SIZE)
+        tracks = [read_track(bs) for _ in range(track_count)]
+        bs.seek(node_end_off)
+    else:
+        tracks = []
 
     match node_type:
         case 0:
@@ -202,6 +219,7 @@ def read_node(bs: BinaryReader) -> Node3DF:
                 child_indexes,
                 transform_type,
                 transform,
+                tracks,
                 vertex_count,
                 face_idx_count,
                 face_groups,
@@ -210,14 +228,6 @@ def read_node(bs: BinaryReader) -> Node3DF:
             unk_floats = [bs.read_float() for _ in range(13)]
             bs.seek(52, 1)
 
-            if bone_group_count > 0:
-                node_end_off = bs.tell()
-                bs.seek(bone_group_off - HEADER_SIZE)
-                bone_groups = [read_bone_group(bs) for _ in range(bone_group_count)]
-                bs.seek(node_end_off)
-            else:
-                bone_groups = []
-
             return BoneNode3DF(
                 node_name,
                 node_type,
@@ -225,8 +235,8 @@ def read_node(bs: BinaryReader) -> Node3DF:
                 child_indexes,
                 transform_type,
                 transform,
+                tracks,
                 unk_floats,
-                bone_groups,
             )
         case _:
             bs.seek(104, 1)
@@ -238,6 +248,7 @@ def read_node(bs: BinaryReader) -> Node3DF:
                 child_indexes,
                 transform_type,
                 transform,
+                tracks,
             )
 
 
