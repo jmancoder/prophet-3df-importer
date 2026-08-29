@@ -41,7 +41,7 @@ def read_node(bs: BinaryReader) -> scene_3df_20.Node3DF:
     if track_count > 0:
         node_end_off = bs.tell()
         bs.seek(track_off - scene_3df_22.HEADER_SIZE)
-        tracks = [scene_3df_20.read_track(bs) for _ in range(track_count)]
+        tracks = [scene_3df_22.read_track(bs) for _ in range(track_count)]
         bs.seek(node_end_off)
     else:
         tracks = []
@@ -79,14 +79,6 @@ def read_node(bs: BinaryReader) -> scene_3df_20.Node3DF:
         case 1:
             unk_floats = [bs.read_float() for _ in range(13)]
             bs.seek(52, 1)
-
-            if track_count > 0:
-                node_end_off = bs.tell()
-                bs.seek(track_off - scene_3df_22.HEADER_SIZE)
-                tracks = [scene_3df_20.read_track(bs) for _ in range(track_count)]
-                bs.seek(node_end_off)
-            else:
-                tracks = []
 
             return scene_3df_20.BoneNode3DF(
                 node_name,

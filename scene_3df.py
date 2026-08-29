@@ -3,7 +3,7 @@ from typing import NamedTuple
 import zlib
 
 import bpy
-from bpy.types import Context, EditBone, Object, VertexGroup
+from bpy.types import Context, EditBone, Object, PoseBone, VertexGroup
 import math
 from mathutils import Matrix
 import numpy as np
@@ -353,7 +353,8 @@ def import_mesh_object(
                             break
                     if bone_name is None:
                         print(
-                            f"WARNING: Failed to find node with index {bone_idx} for vertex group"
+                            "WARNING: Failed to find node with index "
+                            f"{bone_idx} for vertex group"
                         )
                         bone_name = str(bone_idx)
                     vertex_group_map[bone_idx] = mesh_obj.vertex_groups.new(
@@ -511,3 +512,46 @@ def import_3df(context: Context, scene_data: SceneData3DF) -> None:
                 )
             else:
                 child_obj.parent = object_map[parent_idx]
+
+    # Import bone animation tracks
+    context.scene.render.fps = 30
+    for node_idx, node in enumerate(scene_data.nodes):
+        if node_idx not in bone_map:
+            continue
+        bone_name, armature_obj = bone_map[node_idx]
+        context.view_layer.objects.active = armature_obj
+        bpy.ops.object.mode_set(mode="POSE")
+        bone: PoseBone = armature_obj.pose.bones[bone_name]
+        for track in node.tracks:
+            if track.type_id <= 2:
+                axis = track.type_id
+                for key in track.keys:
+                    frame = round(key.time * 30)
+                    bone.location[axis] = key.value
+                    bone.keyframe_insert(
+                        "location",
+                        index=axis,
+                        frame=frame,
+                    )
+            elif track.type_id <= 5:
+                axis = track.type_id - 3
+                for key in track.keys:
+                    frame = round(key.time * 30)
+                    bone.rotation_mode = "XYZ"
+                    bone.rotation_euler[axis] = key.value
+                    bone.keyframe_insert(
+                        "rotation_euler",
+                        index=axis,
+                        frame=frame,
+                    )
+            else:
+                axis = track.type_id - 6
+                for key in track.keys:
+                    frame = round(key.time * 30)
+                    bone.scale[axis] = key.value
+                    bone.keyframe_insert(
+                        "scale",
+                        index=axis,
+                        frame=frame,
+                    )
+        bpy.ops.object.mode_set(mode="OBJECT")

@@ -2,8 +2,6 @@ from dataclasses import dataclass
 from typing import NamedTuple
 
 from mathutils import Matrix
-import numpy as np
-import numpy.typing as npt
 
 from .binary_reader import BinaryReader
 
@@ -35,10 +33,12 @@ class FaceGroup3DF(NamedTuple):
 
 
 class Key3DF(NamedTuple):
-    floats: list[float]
+    time: float
+    value: float
 
 
 class Track3DF(NamedTuple):
+    type_id: int
     keys: list[Key3DF]
 
 
@@ -134,13 +134,17 @@ def read_face_group(bs: BinaryReader) -> FaceGroup3DF:
 
 
 def read_keyframe(bs: BinaryReader) -> Key3DF:
-    floats = [bs.read_float() for _ in range(6)]
-    return Key3DF(floats)
+    time = bs.read_float()
+    value = bs.read_float()
+    bs.read_float()
+    bs.read_float()
+    bs.read_float()
+    bs.read_float()
+    return Key3DF(time, value)
 
 
 def read_track(bs: BinaryReader) -> Track3DF:
-    track_start = bs.tell()
-    bs.read_uint32()
+    type_id = bs.read_uint32()
     bs.read_uint32()
     bs.read_uint32()
     bs.read_uint32()
@@ -151,11 +155,12 @@ def read_track(bs: BinaryReader) -> Track3DF:
     key_off = bs.read_uint32()
 
     # Read keyframes
+    track_end_off = bs.tell()
     bs.seek(key_off - HEADER_SIZE)
     keys = [read_keyframe(bs) for _ in range(key_count)]
-    bs.seek(track_start)
+    bs.seek(track_end_off)
 
-    return Track3DF(keys)
+    return Track3DF(type_id, keys)
 
 
 def read_node(bs: BinaryReader) -> Node3DF:

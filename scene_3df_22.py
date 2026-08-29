@@ -79,6 +79,26 @@ def read_material(bs: BinaryReader) -> scene_3df_20.Material3DF:
     )
 
 
+def read_track(bs: BinaryReader) -> scene_3df_20.Track3DF:
+    type_id = bs.read_uint32()
+    bs.read_uint32()
+    bs.read_uint32()
+    bs.read_uint32()
+    bs.read_uint32()
+    bs.read_uint32()
+    bs.read_uint32()
+    key_count = bs.read_uint32()
+    key_off = bs.read_uint32()
+
+    # Read keyframes
+    track_end_off = bs.tell()
+    bs.seek(key_off - HEADER_SIZE)
+    keys = [scene_3df_20.read_keyframe(bs) for _ in range(key_count)]
+    bs.seek(track_end_off)
+
+    return scene_3df_20.Track3DF(type_id, keys)
+
+
 def read_node(bs: BinaryReader) -> scene_3df_20.Node3DF:
     node_name = bs.read_string_block(16)
     node_type = bs.read_uint32()
@@ -117,7 +137,7 @@ def read_node(bs: BinaryReader) -> scene_3df_20.Node3DF:
     if track_count > 0:
         node_end_off = bs.tell()
         bs.seek(track_off - HEADER_SIZE)
-        tracks = [scene_3df_20.read_track(bs) for _ in range(track_count)]
+        tracks = [read_track(bs) for _ in range(track_count)]
         bs.seek(node_end_off)
     else:
         tracks = []
