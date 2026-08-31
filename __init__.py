@@ -16,8 +16,8 @@ from bpy_extras.io_utils import ImportHelper
 from bpy.props import BoolProperty, EnumProperty, StringProperty
 from bpy.types import Operator, Context
 
-from .reader import Reader3DF
-from .importer import Importer3DF
+from .reader_3df import Reader3DF
+from .importer_3df import Importer3DF
 
 
 class IMPORT_OT_SCENE_3df(Operator, ImportHelper):
@@ -54,11 +54,11 @@ class IMPORT_OT_SCENE_3df(Operator, ImportHelper):
     def execute(self, context: Context):
         in_path = Path(self.filepath)
         with open(in_path, "rb") as f:
-            reader_3df = Reader3DF(self.platform)
-            scene_data = reader_3df.read_scene_from_file(f)
+            reader = Reader3DF(self.platform)
+            scene_data = reader.read_scene_from_file(f)
 
-        importer_3df = Importer3DF(context, self.import_anims)
-        importer_3df.import_scene(scene_data)
+        importer = Importer3DF(context, self.import_anims)
+        importer.import_scene(scene_data)
 
         return {"FINISHED"}
 

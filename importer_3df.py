@@ -7,7 +7,7 @@ import numpy as np
 
 from . import scene_3df_20
 
-from .reader import SceneData3DF
+from .reader_3df import SceneData3DF
 
 
 class Importer3DF:
