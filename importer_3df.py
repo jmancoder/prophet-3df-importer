@@ -2,7 +2,7 @@ import math
 
 import bpy
 from bpy.types import Context, EditBone, Image, Material, Object, PoseBone, VertexGroup
-from mathutils import Matrix
+from mathutils import Euler, Matrix
 import numpy as np
 
 from . import scene_3df_20
@@ -152,10 +152,8 @@ class Importer3DF:
         object_map: dict[int, Object],
         armature_indexes: list[int],
         node_index: int,
-        parent_world_transform: Matrix,
     ) -> None:
         node = scene_data.nodes[node_index]
-        world_transform = parent_world_transform @ node.transform
         match node.type_id:
             case 1:
                 # Skip bones until next pass
@@ -165,7 +163,6 @@ class Importer3DF:
                     scene_data,
                     node_index,
                 )
-                obj.matrix_world = world_transform
 
                 # Parent mesh to armature if it has any child bones
                 if obj.data is not None and any(
@@ -174,7 +171,6 @@ class Importer3DF:
                 ):
                     armature = bpy.data.armatures.new(node.name)
                     armature_obj = bpy.data.objects.new(node.name, armature)
-                    armature_obj.matrix_world = obj.matrix_world
                     self.context.collection.objects.link(armature_obj)
                     armature_indexes.append(node_index)
 
@@ -186,12 +182,8 @@ class Importer3DF:
                     obj = armature_obj
             case 3:
                 obj = self.import_camera_object(node)
-                # Flip camera
-                flip_matrix = Matrix.Rotation(math.radians(180), 4, "Y")
-                obj.matrix_world = world_transform @ flip_matrix
             case _:
                 obj = self.import_empty_object(node)
-                obj.matrix_world = world_transform
 
         # Store object for next two passes
         if obj is not None:
@@ -204,7 +196,6 @@ class Importer3DF:
                 object_map,
                 armature_indexes,
                 child_idx,
-                world_transform,
             )
 
     def create_bones(
@@ -284,7 +275,6 @@ class Importer3DF:
             object_map,
             armature_indexes,
             0,
-            Matrix.Identity(4),
         )
 
         # Create bones
@@ -305,15 +295,16 @@ class Importer3DF:
                 )
             bpy.ops.object.mode_set(mode="OBJECT")
 
-        # Reparent objects
+        # Reparent and transform objects
         for parent_idx, parent_node in enumerate(scene_data.nodes):
             for child_idx in parent_node.child_indexes:
                 if child_idx not in object_map:
                     continue
+                child_node = scene_data.nodes[child_idx]
                 child_obj = object_map[child_idx]
                 if parent_idx in bone_map:
+                    # Parent object to bone
                     bone_name, armature_obj = bone_map[parent_idx]
-                    parent_bone = armature_obj.data.bones[bone_name]
 
                     child_obj.parent = armature_obj
                     child_obj.parent_type = "BONE"
@@ -321,11 +312,18 @@ class Importer3DF:
 
                     child_obj.matrix_world = (
                         armature_obj.matrix_world
-                        @ parent_bone.matrix_local
-                        @ scene_data.nodes[child_idx].transform
+                        @ armature_obj.data.bones[bone_name].matrix_local
+                        @ child_node.transform
                     )
                 else:
+                    # Parent object to object
                     child_obj.parent = object_map[parent_idx]
+                    child_obj.matrix_parent_inverse = Matrix.Identity(4)
+                    child_obj.matrix_basis = child_node.transform
+
+                if child_node.type_id == 3:
+                    # Flip camera
+                    child_obj.rotation_euler.rotate_axis("Y", math.radians(180))
 
         # Import bone animation tracks
         if not self.import_anims:
@@ -337,14 +335,14 @@ class Importer3DF:
             bone_name, armature_obj = bone_map[node_idx]
             self.context.view_layer.objects.active = armature_obj
             bpy.ops.object.mode_set(mode="POSE")
-            bone: PoseBone = armature_obj.pose.bones[bone_name]
+            pose_bone: PoseBone = armature_obj.pose.bones[bone_name]
             for track in node.tracks:
                 if track.type_id <= 2:
                     axis = track.type_id
                     for key in track.keys:
                         frame = round(key.time * 30)
-                        bone.location[axis] = key.value
-                        bone.keyframe_insert(
+                        pose_bone.location[axis] = key.value
+                        pose_bone.keyframe_insert(
                             "location",
                             index=axis,
                             frame=frame,
@@ -353,9 +351,9 @@ class Importer3DF:
                     axis = track.type_id - 3
                     for key in track.keys:
                         frame = round(key.time * 30)
-                        bone.rotation_mode = "XYZ"
-                        bone.rotation_euler[axis] = key.value
-                        bone.keyframe_insert(
+                        pose_bone.rotation_mode = "XYZ"
+                        pose_bone.rotation_euler[axis] = key.value
+                        pose_bone.keyframe_insert(
                             "rotation_euler",
                             index=axis,
                             frame=frame,
@@ -364,8 +362,8 @@ class Importer3DF:
                     axis = track.type_id - 6
                     for key in track.keys:
                         frame = round(key.time * 30)
-                        bone.scale[axis] = key.value
-                        bone.keyframe_insert(
+                        pose_bone.scale[axis] = key.value
+                        pose_bone.keyframe_insert(
                             "scale",
                             index=axis,
                             frame=frame,
