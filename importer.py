@@ -11,8 +11,10 @@ from .reader import SceneData3DF
 
 
 class Importer3DF:
-    def __init__(self, context: Context) -> None:
+    def __init__(self, context: Context, import_anims: bool) -> None:
         self.context: Context = context
+        self.import_anims: bool = import_anims
+
         self.images: list[Image] = []
         self.materials: list[Material] = []
 
@@ -326,6 +328,8 @@ class Importer3DF:
                     child_obj.parent = object_map[parent_idx]
 
         # Import bone animation tracks
+        if not self.import_anims:
+            return
         self.context.scene.render.fps = 30
         for node_idx, node in enumerate(scene_data.nodes):
             if node_idx not in bone_map:

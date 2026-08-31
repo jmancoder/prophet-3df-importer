@@ -13,7 +13,7 @@ from pathlib import Path
 
 import bpy
 from bpy_extras.io_utils import ImportHelper
-from bpy.props import EnumProperty, StringProperty
+from bpy.props import BoolProperty, EnumProperty, StringProperty
 from bpy.types import Operator, Context
 
 from .reader import Reader3DF
@@ -21,7 +21,7 @@ from .importer import Importer3DF
 
 
 class IMPORT_OT_SCENE_3df(Operator, ImportHelper):
-    """Load a 3DF scene."""
+    """Load a 3DF file."""
 
     bl_idname = "import_scene.prophet_3df"
     bl_label = "Import 3DF"
@@ -45,13 +45,19 @@ class IMPORT_OT_SCENE_3df(Operator, ImportHelper):
         default="PC",
     )
 
+    import_anims: BoolProperty(
+        name="Import Animations",
+        description="Import animation tracks from the file. WARNING: Currently broken.",
+        default=False,
+    )
+
     def execute(self, context: Context):
         in_path = Path(self.filepath)
         with open(in_path, "rb") as f:
             reader_3df = Reader3DF(self.platform)
             scene_data = reader_3df.read_scene_from_file(f)
 
-        importer_3df = Importer3DF(context)
+        importer_3df = Importer3DF(context, self.import_anims)
         importer_3df.import_scene(scene_data)
 
         return {"FINISHED"}
