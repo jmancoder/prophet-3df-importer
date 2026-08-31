@@ -31,6 +31,7 @@ class MeshData3DF(NamedTuple):
 class SceneData3DF(NamedTuple):
     nodes: list[scene_3df_20.Node3DF]
     mesh_map: dict[int, MeshData3DF]
+    textures: list[scene_3df_20.Texture3DF]
 
 
 def create_vertex_dtype(bitmask: int) -> npt.DTypeLike:
@@ -142,7 +143,7 @@ def read_3df(f: BufferedReader, platform: str) -> SceneData3DF:
     else:
         raise NotImplementedError(f"Unimplemented 3DF version {version}")
 
-    # Load nodes chunk
+    # Load node chunk
     bs = BinaryReader(f.read(header.node_chunk_size))
     if header.compress_mode == 1:
         bs = decompress_chunk_stream(bs)
@@ -243,7 +244,13 @@ def read_3df(f: BufferedReader, platform: str) -> SceneData3DF:
             triangle_groups,
         )
 
-    return SceneData3DF(nodes, mesh_data_map)
+    # Load and read textures
+    bs = BinaryReader(f.read(header.texture_chunk_size))
+    if header.compress_mode == 1:
+        bs = decompress_chunk_stream(bs)
+    textures = [scene_3df_20.read_texture(bs) for _ in range(header.texture_count)]
+
+    return SceneData3DF(nodes, mesh_data_map, textures)
 
 
 def import_empty_object(context: Context, node: scene_3df_20.Node3DF) -> Object:
@@ -296,12 +303,17 @@ def import_mesh_object(
     mesh.validate()
     mesh.update()
 
+    # This will need to be changed by version or platform later
+    flip_uvs = True
+
     # Import vertex UV layers
     if "uvs" in mesh_data.vertices.dtype.names:
         for i in range(mesh_data.vertices.dtype["uvs"].shape[0]):
             uv_layer = mesh.uv_layers.new(name=f"UV{i}")
             for loop in mesh.loops:
                 uv = mesh_data.vertices["uvs"][loop.vertex_index][i]
+                if flip_uvs:
+                    uv = (uv[0], 1.0 - uv[1] - 1.0)
                 uv_layer.data[loop.index].uv = (uv[0], 1.0 - uv[1])
 
     # Import vertex normals
@@ -467,13 +479,23 @@ def create_bones(
             )
 
 
-def import_3df(context: Context, scene_data: SceneData3DF) -> None:
+def import_3df(context: Context, scene_data: SceneData3DF | None) -> None:
+    # Import images/textures
+    for i, texture in enumerate(scene_data.textures):
+        image = bpy.data.images.new(
+            f"image_{i}", texture.width, texture.height, alpha=True
+        )
+        image.pixels = texture.pixels
+        image.update()
+
+    # Create objects
     object_map: dict[int, Object] = {}
     armature_indexes: list[int] = []
     create_objects(
         context, scene_data, object_map, armature_indexes, 0, Matrix.Identity(4)
     )
 
+    # Create bones
     bone_map: dict[int, tuple[str, Object]] = {}
     for armature_idx in armature_indexes:
         armature_node = scene_data.nodes[armature_idx]

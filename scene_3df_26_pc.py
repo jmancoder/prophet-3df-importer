@@ -28,7 +28,7 @@ def read_header(bs: BinaryReader) -> scene_3df_20.Header3DF:
     bs.seek(132, 1)
     material_count = bs.read_uint32()
     material_off = bs.read_uint32()
-    bs.read_uint32()
+    texture_count = bs.read_uint32()
     bs.read_uint32()
     node_count = bs.read_uint32()
     node_off = bs.read_uint32()
@@ -40,6 +40,7 @@ def read_header(bs: BinaryReader) -> scene_3df_20.Header3DF:
         texture_chunk_size,
         material_count,
         material_off,
+        texture_count,
         node_count,
         node_off,
     )

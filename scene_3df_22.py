@@ -14,6 +14,7 @@ class Header3DF(NamedTuple):
     texture_chunk_size: int
     material_count: int
     material_off: int
+    texture_count: int
     node_count: int
     node_off: int
 
@@ -38,7 +39,7 @@ def read_header(bs: BinaryReader) -> Header3DF:
     bs.seek(128, 1)
     material_count = bs.read_uint32()
     material_off = bs.read_uint32()
-    bs.read_uint32()
+    texture_count = bs.read_uint32()
     bs.read_uint32()
     node_count = bs.read_uint32()
     node_off = bs.read_uint32()
@@ -51,6 +52,7 @@ def read_header(bs: BinaryReader) -> Header3DF:
         texture_chunk_size,
         material_count,
         material_off,
+        texture_count,
         node_count,
         node_off,
     )

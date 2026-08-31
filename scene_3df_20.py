@@ -2,6 +2,8 @@ from dataclasses import dataclass
 from typing import NamedTuple
 
 from mathutils import Matrix
+import numpy as np
+import numpy.typing as npt
 
 from .binary_reader import BinaryReader
 
@@ -15,6 +17,7 @@ class Header3DF(NamedTuple):
     texture_chunk_size: int
     material_count: int
     material_off: int
+    texture_count: int
     node_count: int
     node_off: int
 
@@ -71,6 +74,14 @@ class MeshInfo3DF(NamedTuple):
     faces_off: int
 
 
+class Texture3DF(NamedTuple):
+    flags_0: int
+    width: int
+    height: int
+    palette: npt.NDArray
+    pixels: npt.NDArray
+
+
 def read_header(bs: BinaryReader) -> Header3DF:
     bs.read_uint32()
     compress_mode = bs.read_uint32()
@@ -81,7 +92,7 @@ def read_header(bs: BinaryReader) -> Header3DF:
     texture_chunk_size = bs.read_uint32()
     material_count = bs.read_uint32()
     material_off = bs.read_uint32()
-    bs.read_uint32()
+    texture_count = bs.read_uint32()
     bs.read_uint32()
     nodes_count = bs.read_uint32()
     nodes_off = bs.read_uint32()
@@ -93,6 +104,7 @@ def read_header(bs: BinaryReader) -> Header3DF:
         texture_chunk_size,
         material_count,
         material_off,
+        texture_count,
         nodes_count,
         nodes_off,
     )
@@ -265,4 +277,37 @@ def read_mesh_info(bs: BinaryReader) -> MeshInfo3DF:
     return MeshInfo3DF(
         vertices_off,
         faces_off,
+    )
+
+
+def read_texture(bs: BinaryReader) -> Texture3DF:
+    # Read texture info
+    flags = bs.read_uint32()
+    bs.read_uint32()
+    data_offset = bs.read_uint32()
+    width = bs.read_uint32()
+    height = bs.read_uint32()
+    bs.read_uint32()
+    bs.read_uint32()
+    size_0 = bs.read_uint32()
+    tex_info_end = bs.tell()
+
+    # Read paletted texture data
+    bs.seek(data_offset)
+    palette_off = bs.read_uint32()
+    size_1 = bs.read_uint32()
+    bs.seek(palette_off)
+    palette = np.frombuffer(bs.getbuffer(), np.uint8, 1024, palette_off).reshape(256, 4)
+    palette = palette[:, [2, 1, 0, 3]]  # Convert BGRA to RGBA
+    bs.seek(palette.nbytes, 1)
+    indices = np.frombuffer(bs.getbuffer(), np.uint8, width * height, bs.tell())
+    pixels = (palette[indices].astype(np.float32) / 255.0).ravel()
+    bs.seek(tex_info_end)
+
+    return Texture3DF(
+        flags,
+        width,
+        height,
+        palette,
+        pixels,
     )
