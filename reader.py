@@ -261,7 +261,13 @@ class Reader3DF:
         bs = BinaryReader(f.read(header.texture_chunk_size))
         if header.compress_mode == 1:
             bs = decompress_chunk_stream(bs)
-
-        textures = [scene_3df_20.read_texture(bs) for _ in range(header.texture_count)]
+        if self.version == 23:
+            textures = [
+                scene_3df_23.read_texture(bs) for _ in range(header.texture_count)
+            ]
+        else:
+            textures = [
+                scene_3df_20.read_texture(bs) for _ in range(header.texture_count)
+            ]
 
         return SceneData3DF(materials, nodes, mesh_data_map, textures)

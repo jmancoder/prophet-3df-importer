@@ -1,3 +1,6 @@
+import numpy as np
+import numpy.typing as npt
+
 from .binary_reader import BinaryReader
 from . import scene_3df_20
 from . import scene_3df_22
@@ -102,3 +105,41 @@ def read_node(bs: BinaryReader) -> scene_3df_20.Node3DF:
                 transform,
                 tracks,
             )
+
+
+def read_texture(bs: BinaryReader) -> scene_3df_20.Texture3DF:
+    # Read info entry
+    flags = bs.read_uint32()
+    bs.read_uint32()
+    data_offset = bs.read_uint32()
+    width = bs.read_uint32()
+    height = bs.read_uint32()
+    bs.read_uint32()
+    bs.read_uint32()
+    size_0 = bs.read_uint32()
+    tex_info_end = bs.tell()
+
+    # Read header
+    bs.seek(data_offset)
+    palette_off = bs.read_uint32()
+    size_1 = bs.read_uint32()
+
+    # Read palette
+    bs.seek(palette_off)
+    palette = np.frombuffer(bs.getbuffer(), np.uint8, 1024, palette_off).reshape(256, 4)
+    palette = palette[:, [2, 1, 0, 3]]  # Convert BGRA to RGBA
+    bs.seek(palette.nbytes, 1)
+
+    # Read pixels
+    bs.seek(64, 1)
+    indices = np.frombuffer(bs.getbuffer(), np.uint8, width * height, bs.tell())
+    pixels = (palette[indices].astype(np.float32) / 255.0).ravel()
+    bs.seek(tex_info_end)
+
+    return scene_3df_20.Texture3DF(
+        flags,
+        width,
+        height,
+        palette,
+        pixels,
+    )
