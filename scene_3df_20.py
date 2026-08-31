@@ -31,8 +31,8 @@ class MaterialProperty3DF(NamedTuple):
 
 class Material3DF(NamedTuple):
     name: str
-    color_0: Color
-    color_1: Color
+    diffuse_color: tuple[float, float, float, float]
+    unk_color: tuple[float, float, float, float]
     properties: list[MaterialProperty3DF]
 
 
@@ -131,14 +131,14 @@ def read_material(bs: BinaryReader) -> Material3DF:
     name = bs.read_string_block(12)
     property_count = bs.read_uint32()
     property_off = bs.read_uint32()
-    color_0 = Color(bs.read_vec4B())
+    diffuse_color = bs.read_bgra()
     bs.read_uint32()
     bs.read_float()
     bs.read_float()
     bs.read_int32()
     bs.read_int32()
     bs.read_int32()
-    color_1 = Color(bs.read_vec4B())
+    unk_color = bs.read_bgra()
     bs.seek(44, 1)
     material_end = bs.tell()
 
@@ -152,8 +152,8 @@ def read_material(bs: BinaryReader) -> Material3DF:
 
     return Material3DF(
         name,
-        color_0,
-        color_1,
+        diffuse_color,
+        unk_color,
         properties,
     )
 

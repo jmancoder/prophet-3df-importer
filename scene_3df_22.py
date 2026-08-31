@@ -63,13 +63,13 @@ def read_material(bs: BinaryReader) -> scene_3df_20.Material3DF:
     bs.read_uint32()
     property_count = bs.read_uint32()
     property_off = bs.read_uint32()
-    color_0 = bs.read_vec4B()
+    diffuse_color = bs.read_bgra()
     bs.read_int32()
     bs.read_float()
     bs.read_int32()
     bs.read_int32()
     bs.read_int32()
-    color_1 = bs.read_vec4B()
+    unk_color = bs.read_bgra()
     bs.seek(48, 1)
     material_end = bs.tell()
 
@@ -85,8 +85,8 @@ def read_material(bs: BinaryReader) -> scene_3df_20.Material3DF:
 
     return scene_3df_20.Material3DF(
         name,
-        color_0,
-        color_1,
+        diffuse_color,
+        unk_color,
         properties,
     )
 

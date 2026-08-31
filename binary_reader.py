@@ -57,6 +57,14 @@ class BinaryReader(BytesIO):
     def read_vec4f(self) -> tuple[float, float, float, float]:
         return struct.unpack(self.endian_symbol + "4f", self.read(16))
 
+    def read_rgba(self) -> tuple[float, float, float, float]:
+        r, g, b, a = self.read_vec4B()
+        return (r / 255, g / 255, b / 255, a / 255)
+
+    def read_bgra(self) -> tuple[float, float, float, float]:
+        b, g, r, a = self.read_vec4B()
+        return (r / 255, g / 255, b / 255, a / 255)
+
     def read_loc_rot_scale(self) -> Matrix:
         location = self.read_vec3f()
         rotation = Euler(self.read_vec3f())

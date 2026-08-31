@@ -247,6 +247,7 @@ class Importer3DF:
         links = mat.node_tree.links
 
         # Import property nodes
+        bsdf.inputs["Base Color"].default_value = material_data.diffuse_color
         for prop in material_data.properties:
             if prop.type_id == 0:
                 img_node = nodes.new("ShaderNodeTexImage")
