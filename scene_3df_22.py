@@ -61,23 +61,33 @@ def read_header(bs: BinaryReader) -> Header3DF:
 def read_material(bs: BinaryReader) -> scene_3df_20.Material3DF:
     name = bs.read_string_block(16)
     bs.read_uint32()
-    unk_count = bs.read_uint32()
-    unk_off = bs.read_uint32()
-    color = bs.read_vec4B()
+    property_count = bs.read_uint32()
+    property_off = bs.read_uint32()
+    color_0 = bs.read_vec4B()
     bs.read_int32()
     bs.read_float()
     bs.read_int32()
     bs.read_int32()
     bs.read_int32()
-    bs.read_int32()
-    bs.read_uint32()
-    bs.seek(44, 1)
+    color_1 = bs.read_vec4B()
+    bs.seek(48, 1)
+    material_end = bs.tell()
+
+    # Read properties
+    if property_count > 0 and property_off > 0:
+        bs.seek(property_off - HEADER_SIZE)
+        properties = [
+            scene_3df_20.read_material_property(bs) for _ in range(property_count)
+        ]
+        bs.seek(material_end)
+    else:
+        properties = []
 
     return scene_3df_20.Material3DF(
         name,
-        unk_count,
-        unk_off,
-        color,
+        color_0,
+        color_1,
+        properties,
     )
 
 

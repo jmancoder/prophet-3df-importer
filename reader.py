@@ -17,6 +17,7 @@ class TriangleGroup3DF(NamedTuple):
     bone_indexes: tuple[int, int, int, int]
     triangles: npt.NDArray
     vertex_indices: npt.NDArray
+    material_index: int
 
 
 class MeshData3DF(NamedTuple):
@@ -25,6 +26,7 @@ class MeshData3DF(NamedTuple):
 
 
 class SceneData3DF(NamedTuple):
+    materials: list[scene_3df_20.Material3DF]
     nodes: list[scene_3df_20.Node3DF]
     mesh_map: dict[int, MeshData3DF]
     textures: list[scene_3df_20.Texture3DF]
@@ -212,7 +214,10 @@ class Reader3DF:
                 if face_group.face_type == 1:
                     # Read triangle strips
                     tri_strip_indices = np.frombuffer(
-                        bs.getbuffer(), face_dtype, face_group.face_idx_count, bs.tell()
+                        bs.getbuffer(),
+                        face_dtype,
+                        face_group.face_index_count,
+                        bs.tell(),
                     )
                     bs.seek(tri_strip_indices.nbytes, 1)
                     vertex_indices = np.unique(tri_strip_indices)
@@ -221,12 +226,16 @@ class Reader3DF:
                             face_group.bone_indexes,
                             tri_strips_to_triangles(tri_strip_indices),
                             vertex_indices,
+                            face_group.material_index,
                         )
                     )
                 elif face_group.face_type == 3:
                     # Read triangles
                     tri_indices = np.frombuffer(
-                        bs.getbuffer(), face_dtype, face_group.face_idx_count, bs.tell()
+                        bs.getbuffer(),
+                        face_dtype,
+                        face_group.face_index_count,
+                        bs.tell(),
                     )
                     bs.seek(tri_indices.nbytes, 1)
                     vertex_indices = np.unique(tri_indices)
@@ -235,6 +244,7 @@ class Reader3DF:
                             face_group.bone_indexes,
                             tri_indices.reshape(-1, 3),
                             vertex_indices,
+                            face_group.material_index,
                         )
                     )
                 else:
@@ -251,6 +261,7 @@ class Reader3DF:
         bs = BinaryReader(f.read(header.texture_chunk_size))
         if header.compress_mode == 1:
             bs = decompress_chunk_stream(bs)
+
         textures = [scene_3df_20.read_texture(bs) for _ in range(header.texture_count)]
 
-        return SceneData3DF(nodes, mesh_data_map, textures)
+        return SceneData3DF(materials, nodes, mesh_data_map, textures)

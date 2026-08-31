@@ -51,8 +51,8 @@ class IMPORT_OT_SCENE_3df(Operator, ImportHelper):
             reader_3df = Reader3DF(self.platform)
             scene_data = reader_3df.read_scene_from_file(f)
 
-        importer_3df = Importer3DF(self.platform)
-        importer_3df.import_scene(context, scene_data)
+        importer_3df = Importer3DF(context)
+        importer_3df.import_scene(scene_data)
 
         return {"FINISHED"}
 

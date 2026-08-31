@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from typing import NamedTuple
 
-from mathutils import Matrix
+from mathutils import Color, Matrix
 import numpy as np
 import numpy.typing as npt
 
@@ -22,17 +22,25 @@ class Header3DF(NamedTuple):
     node_off: int
 
 
+class MaterialProperty3DF(NamedTuple):
+    type_id: int
+    value: int
+    unk_0: int
+    unk_1: int
+
+
 class Material3DF(NamedTuple):
     name: str
-    unk_count: int
-    unk_off: int
-    color: tuple[int, int, int, int]
+    color_0: Color
+    color_1: Color
+    properties: list[MaterialProperty3DF]
 
 
 class FaceGroup3DF(NamedTuple):
     face_type: int
-    face_idx_count: int
+    face_index_count: int
     bone_indexes: tuple[int, int, int, int]
+    material_index: int
 
 
 class Key3DF(NamedTuple):
@@ -110,25 +118,43 @@ def read_header(bs: BinaryReader) -> Header3DF:
     )
 
 
+def read_material_property(bs: BinaryReader) -> MaterialProperty3DF:
+    type_id = bs.read_uint32()
+    value = bs.read_uint32()
+    unk_0 = bs.read_uint32()
+    unk_1 = bs.read_uint32()
+
+    return MaterialProperty3DF(type_id, value, unk_0, unk_1)
+
+
 def read_material(bs: BinaryReader) -> Material3DF:
     name = bs.read_string_block(12)
-    unk_count = bs.read_uint32()
-    unk_off = bs.read_uint32()
-    color = bs.read_vec4B()
+    property_count = bs.read_uint32()
+    property_off = bs.read_uint32()
+    color_0 = Color(bs.read_vec4B())
     bs.read_uint32()
     bs.read_float()
     bs.read_float()
     bs.read_int32()
     bs.read_int32()
     bs.read_int32()
-    bs.read_int32()
+    color_1 = Color(bs.read_vec4B())
     bs.seek(44, 1)
+    material_end = bs.tell()
+
+    # Read properties
+    if property_count > 0 and property_off > 0:
+        bs.seek(property_off - HEADER_SIZE)
+        properties = [read_material_property(bs) for _ in range(property_count)]
+        bs.seek(material_end)
+    else:
+        properties = []
 
     return Material3DF(
         name,
-        unk_count,
-        unk_off,
-        color,
+        color_0,
+        color_1,
+        properties,
     )
 
 
@@ -136,13 +162,12 @@ def read_face_group(bs: BinaryReader) -> FaceGroup3DF:
     face_type = bs.read_uint16()
     face_count = bs.read_uint16()
     bone_indexes = bs.read_vec4B()
-    bs.seek(8, 1)
+    bs.read_uint16()
+    bs.read_uint16()
+    material_idx = bs.read_uint16()
+    bs.read_uint16()
 
-    return FaceGroup3DF(
-        face_type,
-        face_count,
-        bone_indexes,
-    )
+    return FaceGroup3DF(face_type, face_count, bone_indexes, material_idx)
 
 
 def read_keyframe(bs: BinaryReader) -> Key3DF:

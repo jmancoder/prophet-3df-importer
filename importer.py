@@ -1,7 +1,7 @@
 import math
 
 import bpy
-from bpy.types import Context, EditBone, Object, PoseBone, VertexGroup
+from bpy.types import Context, EditBone, Image, Material, Object, PoseBone, VertexGroup
 from mathutils import Matrix
 import numpy as np
 
@@ -11,9 +11,10 @@ from .reader import SceneData3DF
 
 
 class Importer3DF:
-    def __init__(self, platform: str) -> None:
-        self.context: Context
-        self.platform: str = platform
+    def __init__(self, context: Context) -> None:
+        self.context: Context = context
+        self.images: list[Image] = []
+        self.materials: list[Material] = []
 
     def import_empty_object(self, node: scene_3df_20.Node3DF) -> Object:
         node_obj = bpy.data.objects.new(node.name, None)
@@ -61,8 +62,15 @@ class Importer3DF:
         mesh.validate()
         mesh.update()
 
-        # This will need to be changed by self.version or self.platform later
-        flip_uvs = True
+        # Assign materials
+        for material in self.materials:
+            mesh.materials.append(material)
+        tri_cursor = 0
+        for tri_group in mesh_data.triangle_groups:
+            tri_count = len(tri_group.triangles)
+            for i in range(tri_count):
+                mesh.polygons[tri_cursor + i].material_index = tri_group.material_index
+            tri_cursor += tri_count
 
         # Import vertex UV layers
         if "uvs" in mesh_data.vertices.dtype.names:
@@ -70,9 +78,7 @@ class Importer3DF:
                 uv_layer = mesh.uv_layers.new(name=f"UV{i}")
                 for loop in mesh.loops:
                     uv = mesh_data.vertices["uvs"][loop.vertex_index][i]
-                    if flip_uvs:
-                        uv = (uv[0], 1.0 - uv[1] - 1.0)
-                    uv_layer.data[loop.index].uv = (uv[0], 1.0 - uv[1])
+                    uv_layer.data[loop.index].uv = uv
 
         # Import vertex normals
         if "normal" in mesh_data.vertices.dtype.names:
@@ -233,16 +239,39 @@ class Importer3DF:
                     transform,
                 )
 
-    def import_scene(self, context: Context, scene_data: SceneData3DF) -> None:
-        self.context = context
+    def import_material(self, material_data: scene_3df_20.Material3DF) -> Material:
+        mat = bpy.data.materials.new(material_data.name)
+        mat.use_nodes = True
+        nodes = mat.node_tree.nodes
+        bsdf = nodes.get("Principled BSDF")
+        links = mat.node_tree.links
 
+        # Import property nodes
+        for prop in material_data.properties:
+            if prop.type_id == 0:
+                img_node = nodes.new("ShaderNodeTexImage")
+                img_node.image = self.images[prop.value]
+                img_node.location = (-600.0, 100.0)
+                links.new(img_node.outputs["Color"], bsdf.inputs["Base Color"])
+                links.new(img_node.outputs["Alpha"], bsdf.inputs["Alpha"])
+                break
+
+        return mat
+
+    def import_scene(self, scene_data: SceneData3DF) -> None:
         # Import images/textures
         for i, texture in enumerate(scene_data.textures):
-            image = bpy.data.images.new(
+            img = bpy.data.images.new(
                 f"image_{i}", texture.width, texture.height, alpha=True
             )
-            image.pixels = texture.pixels
-            image.update()
+            img.pixels = texture.pixels
+            img.update()
+            self.images.append(img)
+
+        # Import materials
+        self.materials = [
+            self.import_material(mat_data) for mat_data in scene_data.materials
+        ]
 
         # Create objects
         object_map: dict[int, Object] = {}
