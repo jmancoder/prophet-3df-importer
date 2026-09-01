@@ -21,6 +21,8 @@ def read_node(bs: BinaryReader) -> scene_3df_20.Node3DF:
     track_count = bs.read_uint32()
     track_off = bs.read_uint32()
     transform_type = bs.read_uint32()
+    if transform_type != 0:
+        raise NotImplementedError(f"Unimplemented transform type {transform_type}")
     transform = bs.read_loc_rot_scale()
     bs.read_vec3f()
     bs.read_int32()
