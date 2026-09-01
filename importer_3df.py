@@ -1,8 +1,17 @@
 import math
 
 import bpy
-from bpy.types import Context, EditBone, Image, Material, Object, PoseBone, VertexGroup
-from mathutils import Euler, Matrix
+from bpy.types import (
+    Bone,
+    Context,
+    EditBone,
+    Image,
+    Material,
+    Object,
+    PoseBone,
+    VertexGroup,
+)
+from mathutils import Matrix
 import numpy as np
 
 from . import scene_3df_20
@@ -328,44 +337,93 @@ class Importer3DF:
         # Import bone animation tracks
         if not self.import_anims:
             return
-        self.context.scene.render.fps = 30
+        fps = 30
+        self.context.scene.render.fps = fps
         for node_idx, node in enumerate(scene_data.nodes):
             if node_idx not in bone_map:
                 continue
+            # Combine tracks into local-space transforms
+            key_transform_map: dict[int, Matrix] = {}
+            for track in node.tracks:
+                if track.type_id <= 2:
+                    # Location track
+                    axis = track.type_id
+                    for key in track.keys:
+                        frame = round(key.time * fps)
+                        if frame in key_transform_map:
+                            key_transform_map[frame].translation[axis] = key.value
+                        else:
+                            key_transform = node.transform.copy()
+                            key_transform.translation[axis] = key.value
+                            key_transform_map[frame] = key_transform
+                elif track.type_id <= 5:
+                    # Rotation track
+                    axis = track.type_id - 3
+                    if axis == 0:
+                        axis_letter = "X"
+                    elif axis == 1:
+                        axis_letter = "Y"
+                    else:
+                        axis_letter = "Z"
+                    for key in track.keys:
+                        frame = round(key.time * fps)
+                        rotation_matrix = Matrix.Rotation(key.value, 4, axis_letter)
+                        if frame in key_transform_map:
+                            key_transform_map[frame] @= rotation_matrix
+                        else:
+                            key_transform = node.transform.copy()
+                            key_transform @= rotation_matrix
+                            key_transform_map[frame] = key_transform
+                else:
+                    # Scale track
+                    axis = track.type_id - 6
+                    axis_vector = [0.0, 0.0, 0.0]
+                    axis_vector[axis] = 1.0
+                    for key in track.keys:
+                        frame = round(key.time * fps)
+                        scale_matrix = Matrix.Scale(key.value, 4, axis_vector)
+                        if frame in key_transform_map:
+                            key_transform_map[frame] @= scale_matrix
+                        else:
+                            key_transform = node.transform.copy()
+                            key_transform @= scale_matrix
+                            key_transform_map[frame] = key_transform
+
+            # Create keyframes
             bone_name, armature_obj = bone_map[node_idx]
+            bone: Bone = armature_obj.data.bones[bone_name]
             self.context.view_layer.objects.active = armature_obj
             bpy.ops.object.mode_set(mode="POSE")
             pose_bone: PoseBone = armature_obj.pose.bones[bone_name]
-            for track in node.tracks:
-                if track.type_id <= 2:
-                    axis = track.type_id
-                    for key in track.keys:
-                        frame = round(key.time * 30)
-                        pose_bone.location[axis] = key.value
-                        pose_bone.keyframe_insert(
-                            "location",
-                            index=axis,
-                            frame=frame,
-                        )
-                elif track.type_id <= 5:
-                    axis = track.type_id - 3
-                    for key in track.keys:
-                        frame = round(key.time * 30)
-                        pose_bone.rotation_mode = "XYZ"
-                        pose_bone.rotation_euler[axis] = key.value
-                        pose_bone.keyframe_insert(
-                            "rotation_euler",
-                            index=axis,
-                            frame=frame,
-                        )
+            pose_bone.rotation_mode = "XYZ"
+            local_location, local_rotation, local_scale = node.transform.decompose()
+            local_rotation = local_rotation.to_euler()
+            for frame, key_transform in key_transform_map.items():
+                if pose_bone.parent is None:
+                    basis = bone.convert_local_to_pose(
+                        key_transform,
+                        bone.matrix_local,
+                        invert=True,
+                    )
                 else:
-                    axis = track.type_id - 6
-                    for key in track.keys:
-                        frame = round(key.time * 30)
-                        pose_bone.scale[axis] = key.value
+                    basis = bone.convert_local_to_pose(
+                        key_transform,
+                        bone.matrix_local,
+                        parent_matrix=pose_bone.parent.matrix,
+                        parent_matrix_local=pose_bone.parent.bone.matrix_local,
+                        invert=True,
+                    )
+                pose_bone.matrix_basis = basis
+
+                key_location, key_rotation, key_scale = key_transform.decompose()
+                key_rotation = key_rotation.to_euler()
+                for i in range(3):
+                    if key_location[i] != local_location[i]:
+                        pose_bone.keyframe_insert("location", index=i, frame=frame)
+                    if key_rotation[i] != local_rotation[i]:
                         pose_bone.keyframe_insert(
-                            "scale",
-                            index=axis,
-                            frame=frame,
+                            "rotation_euler", index=i, frame=frame
                         )
+                    if key_scale[i] != local_scale[i]:
+                        pose_bone.keyframe_insert("scale", index=i, frame=frame)
             bpy.ops.object.mode_set(mode="OBJECT")
