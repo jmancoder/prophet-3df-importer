@@ -23,5 +23,7 @@ This Blender add-on allows you to import 3DF scene files from certain [Prophet](
 
 ## TODO
 - Test on more games and platforms
+- Read textures more consistently
+- Add full support for 3DF versions 20 and 21
+- Fix animation import
 - Import all node types
-- Import and apply textures
