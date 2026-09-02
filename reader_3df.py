@@ -29,7 +29,7 @@ class SceneData3DF(NamedTuple):
     materials: list[scene_3df_20.Material3DF]
     nodes: list[scene_3df_20.Node3DF]
     mesh_map: dict[int, MeshData3DF]
-    textures: list[scene_3df_20.Texture3DF]
+    textures: list[scene_3df_20.Texture3DF | None]
 
 
 def create_vertex_dtype(bitmask: int) -> npt.DTypeLike:
@@ -257,17 +257,26 @@ class Reader3DF:
                 triangle_groups,
             )
 
-        # Load and read textures
+        # Load texture chunk
         bs = BinaryReader(f.read(header.texture_chunk_size))
         if header.compress_mode == 1:
             bs = decompress_chunk_stream(bs)
+
+        # Read textures
+        textures: list[scene_3df_20.Texture3DF | None] = []
         if self.version == 23:
-            textures = [
-                scene_3df_23.read_texture(bs) for _ in range(header.texture_count)
-            ]
+            for _ in range(header.texture_count):
+                try:
+                    textures.append(scene_3df_23.read_texture(bs))
+                except Exception as e:
+                    print(e)
+                    textures.append(None)
         else:
-            textures = [
-                scene_3df_20.read_texture(bs) for _ in range(header.texture_count)
-            ]
+            for _ in range(header.texture_count):
+                try:
+                    textures.append(scene_3df_20.read_texture(bs))
+                except Exception as e:
+                    print(e)
+                    textures.append(None)
 
         return SceneData3DF(materials, nodes, mesh_data_map, textures)
