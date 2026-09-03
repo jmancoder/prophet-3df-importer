@@ -70,8 +70,6 @@ class Importer3DF:
             [],
             triangles,
         )
-        mesh.validate()
-        mesh.update()
 
         # Assign materials
         for material in self.materials:
@@ -82,6 +80,10 @@ class Importer3DF:
             for i in range(tri_count):
                 mesh.polygons[tri_cursor + i].material_index = tri_group.material_index
             tri_cursor += tri_count
+
+        # Validate mesh later to avoid a geometry mismatch during material assignment
+        mesh.validate()
+        mesh.update()
 
         # Import vertex UV layers
         if "uvs" in mesh_data.vertices.dtype.names:
