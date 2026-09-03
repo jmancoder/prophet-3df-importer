@@ -75,6 +75,10 @@ class BinaryReader(BytesIO):
         rows = [self.read_vec4f() for _ in range(3)]
         return Matrix(rows).to_4x4()
 
+    def read_matrix_4x4(self) -> Matrix:
+        rows = [self.read_vec4f() for _ in range(4)]
+        return Matrix(rows)
+
     def read_string_block(self, length: int) -> str:
         text = self.read(length).decode(errors="ignore")
         return text.split("\x00")[0]

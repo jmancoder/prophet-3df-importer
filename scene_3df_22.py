@@ -1,4 +1,9 @@
+from dataclasses import dataclass
 from typing import NamedTuple
+
+from mathutils import Matrix
+import numpy as np
+import numpy.typing as npt
 
 from .binary_reader import BinaryReader
 from . import scene_3df_20
@@ -19,8 +24,32 @@ class Header3DF(NamedTuple):
     node_off: int
 
 
+@dataclass(frozen=True, slots=True)
+class Node3DF:
+    name: str
+    type_id: int
+    internal_index: int
+    child_indexes: list[int]
+    transform_type: int
+    transform: Matrix
+    tracks: list[scene_3df_20.Track3DF]
+
+
+@dataclass(frozen=True, slots=True)
+class BoneNode3DF(Node3DF):
+    unk_floats: list[float]
+    tracks: list[scene_3df_20.Track3DF]
+
+
+@dataclass(frozen=True, slots=True)
+class MeshNode3DF(Node3DF):
+    vertex_count: int
+    face_idx_count: int
+    face_groups: list[scene_3df_20.FaceGroup3DF]
+
+
 class MeshInfo3DF(NamedTuple):
-    vertex_bitmask: int
+    flags: int
     unk_int: int
     unk_float: float
     vertices_off: int
@@ -111,7 +140,41 @@ def read_track(bs: BinaryReader) -> scene_3df_20.Track3DF:
     return scene_3df_20.Track3DF(type_id, keys)
 
 
-def read_node(bs: BinaryReader) -> scene_3df_20.Node3DF:
+def create_vertex_dtype(bitmask: int) -> npt.DTypeLike:
+    fields = []
+
+    if bitmask & 0x1 != 0:
+        fields.append(("position", np.float32, 3))
+
+    blend_weight_count = 0
+    if bitmask & 0x2:
+        blend_weight_count = 1
+    if bitmask & 0x4:
+        blend_weight_count = 2
+    if bitmask & 0x8:
+        blend_weight_count = 3
+    if blend_weight_count > 0:
+        fields.append((f"blend_weights", np.float32, blend_weight_count))
+
+    if bitmask & 0x10:
+        fields.append(("normal", np.float32, 3))
+    if bitmask & 0x20:
+        fields.append(("diffuse", np.uint8, 4))
+
+    uv_count = 0
+    if bitmask & 0x100:
+        uv_count = 1
+    if bitmask & 0x200:
+        uv_count = 2
+    if bitmask & 0x400:
+        uv_count = 3
+    if uv_count > 0:
+        fields.append((f"uvs", np.float32, (uv_count, 2)))
+
+    return np.dtype(fields)
+
+
+def read_node(bs: BinaryReader) -> Node3DF:
     node_name = bs.read_string_block(16)
     node_type = bs.read_uint32()
     bs.read_int32()
@@ -126,15 +189,12 @@ def read_node(bs: BinaryReader) -> scene_3df_20.Node3DF:
     track_count = bs.read_uint32()
     track_off = bs.read_uint32()
     transform_type = bs.read_uint32()
-    if transform_type != 0:
-        raise NotImplementedError(f"Unimplemented transform type {transform_type}")
-    transform = bs.read_loc_rot_scale()
-    bs.read_vec3f()
-    bs.read_int32()
-    bs.read_float()
-    bounds_min = bs.read_vec3f()
-    bounds_max = bs.read_vec3f()
-    bs.seek(68, 1)
+    if transform_type == 0:
+        transform = bs.read_loc_rot_scale()
+        bs.seek(28, 1)
+    else:
+        transform = bs.read_matrix_4x4()
+    bs.seek(84, 1)
     face_groups_off = bs.read_uint32()
     bs.seek(28, 1)
 
@@ -174,7 +234,7 @@ def read_node(bs: BinaryReader) -> scene_3df_20.Node3DF:
             else:
                 face_groups = []
 
-            return scene_3df_20.MeshNode3DF(
+            return MeshNode3DF(
                 node_name,
                 node_type,
                 internal_idx,
@@ -190,7 +250,7 @@ def read_node(bs: BinaryReader) -> scene_3df_20.Node3DF:
             unk_floats = [bs.read_float() for _ in range(13)]
             bs.seek(52, 1)
 
-            return scene_3df_20.BoneNode3DF(
+            return BoneNode3DF(
                 node_name,
                 node_type,
                 internal_idx,
@@ -203,7 +263,7 @@ def read_node(bs: BinaryReader) -> scene_3df_20.Node3DF:
         case _:
             bs.seek(104, 1)
 
-            return scene_3df_20.Node3DF(
+            return Node3DF(
                 node_name,
                 node_type,
                 internal_idx,
@@ -215,14 +275,14 @@ def read_node(bs: BinaryReader) -> scene_3df_20.Node3DF:
 
 
 def read_mesh_info(bs: BinaryReader) -> MeshInfo3DF:
-    vertex_bitmask = bs.read_uint32()
+    flags = bs.read_uint32()
     unk_int = bs.read_uint32()
     unk_float = bs.read_float()
     vertices_off = bs.read_uint32()
     faces_off = bs.read_uint32()
 
     return MeshInfo3DF(
-        vertex_bitmask,
+        flags,
         unk_int,
         unk_float,
         vertices_off,

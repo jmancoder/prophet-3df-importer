@@ -3,7 +3,7 @@ from . import scene_3df_20
 from . import scene_3df_22
 
 
-def read_node(bs: BinaryReader) -> scene_3df_20.Node3DF:
+def read_node(bs: BinaryReader) -> scene_3df_22.Node3DF:
     node_name = bs.read_string_block(16)
     node_type = bs.read_uint32()
     bs.read_int32()
@@ -66,7 +66,7 @@ def read_node(bs: BinaryReader) -> scene_3df_20.Node3DF:
             else:
                 face_groups = []
 
-            return scene_3df_20.MeshNode3DF(
+            return scene_3df_22.MeshNode3DF(
                 node_name,
                 node_type,
                 internal_idx,
@@ -82,7 +82,7 @@ def read_node(bs: BinaryReader) -> scene_3df_20.Node3DF:
             unk_floats = [bs.read_float() for _ in range(13)]
             bs.seek(52, 1)
 
-            return scene_3df_20.BoneNode3DF(
+            return scene_3df_22.BoneNode3DF(
                 node_name,
                 node_type,
                 internal_idx,
@@ -95,7 +95,7 @@ def read_node(bs: BinaryReader) -> scene_3df_20.Node3DF:
         case _:
             bs.seek(104, 1)
 
-            return scene_3df_20.Node3DF(
+            return scene_3df_22.Node3DF(
                 node_name,
                 node_type,
                 internal_idx,

@@ -9,7 +9,7 @@ HEADER_SIZE = 412
 
 
 class MeshInfo3DF(NamedTuple):
-    vertex_bitmask: int
+    flags: int
     unk_int: int
     unk_float: float
     vertices_off: int
@@ -47,7 +47,7 @@ def read_header(bs: BinaryReader) -> scene_3df_20.Header3DF:
 
 
 def read_mesh_info(bs: BinaryReader) -> MeshInfo3DF:
-    vertex_bitmask = bs.read_uint32()
+    flags = bs.read_uint32()
     unk_int = bs.read_uint32()
     unk_float = bs.read_float()
     vertices_off = bs.read_uint32()
@@ -55,7 +55,7 @@ def read_mesh_info(bs: BinaryReader) -> MeshInfo3DF:
     mesh_transform = bs.read_matrix_3x4()
 
     return MeshInfo3DF(
-        vertex_bitmask,
+        flags,
         unk_int,
         unk_float,
         vertices_off,

@@ -1,5 +1,5 @@
 from io import BufferedReader
-from typing import NamedTuple
+from typing import NamedTuple, Sequence
 import zlib
 
 import numpy as np
@@ -34,7 +34,7 @@ class MeshData3DF(NamedTuple):
 
 class SceneData3DF(NamedTuple):
     materials: list[scene_3df_20.Material3DF]
-    nodes: list[scene_3df_20.Node3DF]
+    nodes: Sequence[scene_3df_20.Node3DF | scene_3df_22.Node3DF]
     mesh_map: dict[int, MeshData3DF]
     textures: list[Texture3DF]
 
@@ -108,40 +108,6 @@ def read_texture(bs: BinaryReader, has_extra_header: bool = False) -> Texture3DF
     )
 
 
-def create_vertex_dtype(bitmask: int) -> npt.DTypeLike:
-    fields = []
-
-    if bitmask & 0x1 != 0:
-        fields.append(("position", np.float32, 3))
-
-    blend_weight_count = 0
-    if bitmask & 0x2:
-        blend_weight_count = 1
-    if bitmask & 0x4:
-        blend_weight_count = 2
-    if bitmask & 0x8:
-        blend_weight_count = 3
-    if blend_weight_count > 0:
-        fields.append((f"blend_weights", np.float32, blend_weight_count))
-
-    if bitmask & 0x10:
-        fields.append(("normal", np.float32, 3))
-    if bitmask & 0x20:
-        fields.append(("color", np.uint8, 4))
-
-    uv_count = 0
-    if bitmask & 0x100:
-        uv_count = 1
-    if bitmask & 0x200:
-        uv_count = 2
-    if bitmask & 0x400:
-        uv_count = 3
-    if uv_count > 0:
-        fields.append((f"uvs", np.float32, (uv_count, 2)))
-
-    return np.dtype(fields)
-
-
 def tri_strips_to_triangles(indices: npt.NDArray) -> npt.NDArray:
     triangles = []
 
@@ -192,7 +158,11 @@ class Reader3DF:
 
         # Load and read self.version-specific header
         self.version = bs.read_uint32()
-        if self.version == 22 or self.version == 23:
+        if self.version == 20:
+            header_size = scene_3df_20.HEADER_SIZE
+            bs = BinaryReader(f.read(header_size - 8))
+            header = scene_3df_20.read_header(bs)
+        elif self.version == 22 or self.version == 23:
             header_size = scene_3df_22.HEADER_SIZE
             bs = BinaryReader(f.read(header_size - 8))
             header = scene_3df_22.read_header(bs)
@@ -213,14 +183,14 @@ class Reader3DF:
                 bs = BinaryReader(f.read(header_size - 8))
                 header = scene_3df_22.read_header(bs)
                 raise NotImplementedError(
-                    f"Unimplemented self.platform {self.platform} for self.version {self.version}"
+                    f"Unimplemented platform {self.platform} for version {self.version}"
                 )
             else:
                 raise NotImplementedError(
-                    f"Unimplemented self.platform {self.platform} for self.version {self.version}"
+                    f"Unimplemented platform {self.platform} for version {self.version}"
                 )
         else:
-            raise NotImplementedError(f"Unimplemented 3DF self.version {self.version}")
+            raise NotImplementedError(f"Unimplemented 3DF version {self.version}")
 
         # Load node chunk
         bs = BinaryReader(f.read(header.node_chunk_size))
@@ -240,7 +210,9 @@ class Reader3DF:
 
         # Read nodes
         bs.seek(header.node_off - header_size)
-        if self.version == 22:
+        if self.version == 20:
+            nodes = [scene_3df_20.read_node(bs) for _ in range(header.node_count)]
+        elif self.version == 22:
             nodes = [scene_3df_22.read_node(bs) for _ in range(header.node_count)]
         else:
             nodes = [scene_3df_23.read_node(bs) for _ in range(header.node_count)]
@@ -252,7 +224,11 @@ class Reader3DF:
             bs = decompress_chunk_stream(bs)
 
         # Read mesh info entries
-        if self.version == 22 or self.version == 23:
+        if self.version == 20:
+            mesh_info_entries = [
+                scene_3df_20.read_mesh_info(bs) for _ in range(header.node_count)
+            ]
+        elif self.version == 22 or self.version == 23:
             mesh_info_entries = [
                 scene_3df_22.read_mesh_info(bs) for _ in range(header.node_count)
             ]
@@ -264,14 +240,16 @@ class Reader3DF:
         # Read meshes
         mesh_data_map: dict[int, MeshData3DF] = {}
         for i, (node, mesh_info) in enumerate(zip(nodes, mesh_info_entries)):
-            if mesh_info.vertex_bitmask == 0 or not isinstance(
-                node, scene_3df_20.MeshNode3DF
-            ):
+            if node.type_id != 0:
                 continue
 
             # Read vertices
+            if self.version == 20:
+                vertex_dtype = scene_3df_20.create_vertex_dtype(node.flags)
+                print(node.name, vertex_dtype, node.flags)
+            else:
+                vertex_dtype = scene_3df_22.create_vertex_dtype(mesh_info.flags)
             bs.seek(mesh_info.vertices_off)
-            vertex_dtype = create_vertex_dtype(mesh_info.vertex_bitmask)
             vertices = np.frombuffer(
                 bs.getbuffer(),
                 vertex_dtype,

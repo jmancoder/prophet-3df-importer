@@ -52,7 +52,7 @@ class Importer3DF:
             mesh_data.vertices.dtype.names is None
             or "position" not in mesh_data.vertices.dtype.names
         ):
-            print(f"WARNING: Mesh node {node.name} contains no positions")
+            print(f"INFO: Mesh node {node.name} contains no positions")
             return self.import_empty_object(node)
 
         # Combine triangle groups
