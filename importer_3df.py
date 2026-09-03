@@ -264,17 +264,12 @@ class Importer3DF:
     def import_scene(self, scene_data: SceneData3DF) -> None:
         # Import images/textures
         for i, texture in enumerate(scene_data.textures):
-            if texture is not None:
-                img = bpy.data.images.new(
-                    f"image_{i}", texture.width, texture.height, alpha=True
-                )
-                img.pixels = texture.pixels
-                img.update()
-                self.images.append(img)
-            else:
-                # Create dummy texture
-                img = bpy.data.images.new(f"image_{i}", 1, 1, alpha=True)
-                self.images.append(img)
+            img = bpy.data.images.new(
+                f"image_{i}", texture.width, texture.height, alpha=True
+            )
+            img.pixels = texture.pixels
+            img.update()
+            self.images.append(img)
 
         # Import materials
         self.materials = [

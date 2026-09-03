@@ -6,11 +6,18 @@ import numpy as np
 import numpy.typing as npt
 
 from .binary_reader import BinaryReader
+from . import image_utils
 from . import scene_3df_20
 from . import scene_3df_22
 from . import scene_3df_23
 from . import scene_3df_26_ds
 from . import scene_3df_26_pc
+
+
+class Texture3DF(NamedTuple):
+    width: int
+    height: int
+    pixels: npt.NDArray
 
 
 class TriangleGroup3DF(NamedTuple):
@@ -29,7 +36,76 @@ class SceneData3DF(NamedTuple):
     materials: list[scene_3df_20.Material3DF]
     nodes: list[scene_3df_20.Node3DF]
     mesh_map: dict[int, MeshData3DF]
-    textures: list[scene_3df_20.Texture3DF | None]
+    textures: list[Texture3DF]
+
+
+def read_texture(bs: BinaryReader, has_extra_header: bool = False) -> Texture3DF:
+    flags = bs.read_uint32()
+    type_id = bs.read_uint32()
+    data_offset = bs.read_uint32()
+    width = bs.read_uint32()
+    height = bs.read_uint32()
+    bs.read_uint32()
+    bs.read_uint32()
+    padded_size = bs.read_uint32()
+    tex_info_end = bs.tell()
+
+    bs.seek(data_offset)
+    data_off = bs.read_uint32()
+    data_size = bs.read_uint32()
+    bs.seek(data_off)
+    match type_id:
+        case 0:
+            # 8-bit paletted
+            palette = np.frombuffer(bs.getbuffer(), np.uint8, 1024, bs.tell()).reshape(
+                256, 4
+            )
+            palette = palette[:, [2, 1, 0, 3]]  # Convert BGRA to RGBA
+            bs.seek(palette.nbytes, 1)
+            if has_extra_header:
+                bs.seek(64, 1)
+            indices = np.frombuffer(bs.getbuffer(), np.uint8, width * height, bs.tell())
+            pixels = image_utils.rgba_to_floats(palette[indices]).ravel()
+        case 3:
+            # 4-bit paletted
+            palette = np.frombuffer(bs.getbuffer(), np.uint8, 64, bs.tell()).reshape(
+                16, 4
+            )
+            palette = palette[:, [2, 1, 0, 3]]  # Convert BGRA to RGBA
+            bs.seek(palette.nbytes, 1)
+            if has_extra_header:
+                bs.seek(64, 1)
+            indices_raw = np.frombuffer(
+                bs.getbuffer(), np.uint8, width * height // 2, bs.tell()
+            )
+            indices = np.empty(indices_raw.size * 2, dtype=np.uint8)
+            indices[0::2] = indices_raw >> 4
+            indices[1::2] = indices_raw & 0xF
+            pixels = image_utils.rgba_to_floats(palette[indices]).ravel()
+        case 6:
+            # BGRA4444
+            raw_pixels = np.frombuffer(
+                bs.getbuffer(), np.uint16, width * height, bs.tell()
+            )
+            pixels = np.empty((raw_pixels.size, 4), dtype=np.float32)
+            pixels[:, 0] = ((raw_pixels >> 8) & 0xF) / 15.0
+            pixels[:, 1] = ((raw_pixels >> 4) & 0xF) / 15.0
+            pixels[:, 2] = (raw_pixels & 0xF) / 15.0
+            pixels[:, 3] = ((raw_pixels >> 12) & 0xF) / 15.0
+            pixels = pixels.ravel()
+        case 8:
+            # DXT1
+            pixels = image_utils.dxt1_to_rgba(bs.read(data_size), width, height)
+        case _:
+            print(f"WARNING: Unimplemented texture type {type_id}")
+            pixels = np.tile([0.0, 0.0, 0.0, 1.0], width * height)
+    bs.seek(tex_info_end)
+
+    return Texture3DF(
+        width,
+        height,
+        pixels,
+    )
 
 
 def create_vertex_dtype(bitmask: int) -> npt.DTypeLike:
@@ -263,20 +339,8 @@ class Reader3DF:
             bs = decompress_chunk_stream(bs)
 
         # Read textures
-        textures: list[scene_3df_20.Texture3DF | None] = []
-        if self.version == 23:
-            for _ in range(header.texture_count):
-                try:
-                    textures.append(scene_3df_23.read_texture(bs))
-                except Exception as e:
-                    print(e)
-                    textures.append(None)
-        else:
-            for _ in range(header.texture_count):
-                try:
-                    textures.append(scene_3df_20.read_texture(bs))
-                except Exception as e:
-                    print(e)
-                    textures.append(None)
+        textures: list[Texture3DF] = []
+        for i in range(header.texture_count):
+            textures.append(read_texture(bs, has_extra_header=self.version == 23))
 
         return SceneData3DF(materials, nodes, mesh_data_map, textures)
