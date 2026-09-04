@@ -13,6 +13,12 @@ license = [
   "SPDX:GPL-3.0-or-later",
 ]
 
+platforms = [
+  "windows-x64",
+  "macos-arm64",
+  "linux-x64"
+]
+
 wheels = [
   "./wheels/texture2ddecoder-1.0.6-cp311-abi3-win_amd64.whl",
   "./wheels/texture2ddecoder-1.0.6-cp311-abi3-macosx_11_0_arm64.whl",
