@@ -15,7 +15,7 @@ from mathutils import Matrix
 import numpy as np
 
 from . import scene_3df_20
-
+from . import scene_3df_22
 from .reader_3df import SceneData3DF
 
 
@@ -27,14 +27,16 @@ class Importer3DF:
         self.images: list[Image] = []
         self.materials: list[Material] = []
 
-    def import_empty_object(self, node: scene_3df_20.Node3DF) -> Object:
+    def import_empty_object(
+        self, node: scene_3df_20.Node3DF | scene_3df_22.Node3DF
+    ) -> Object:
         node_obj = bpy.data.objects.new(node.name, None)
         node_obj.empty_display_size = 0.2
         self.context.collection.objects.link(node_obj)
 
         return node_obj
 
-    def import_camera_object(self, node: scene_3df_20.Node3DF):
+    def import_camera_object(self, node: scene_3df_20.Node3DF | scene_3df_22.Node3DF):
         camera = bpy.data.cameras.new(node.name)
         camera_obj = bpy.data.objects.new(node.name, camera)
         self.context.collection.objects.link(camera_obj)

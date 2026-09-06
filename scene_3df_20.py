@@ -68,7 +68,6 @@ class Node3DF:
 @dataclass(frozen=True, slots=True)
 class BoneNode3DF(Node3DF):
     unk_floats: list[float]
-    tracks: list[Track3DF]
 
 
 @dataclass(frozen=True, slots=True)

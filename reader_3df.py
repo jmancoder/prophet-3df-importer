@@ -156,7 +156,7 @@ class Reader3DF:
         if sig != "3df":
             raise ValueError("Missing 3df file signature")
 
-        # Load and read self.version-specific header
+        # Load and read version-specific header
         self.version = bs.read_uint32()
         if self.version == 20:
             header_size = scene_3df_20.HEADER_SIZE
@@ -240,15 +240,14 @@ class Reader3DF:
         # Read meshes
         mesh_data_map: dict[int, MeshData3DF] = {}
         for i, (node, mesh_info) in enumerate(zip(nodes, mesh_info_entries)):
-            if node.type_id != 0:
+            if type(node) is scene_3df_20.MeshNode3DF:
+                vertex_dtype = scene_3df_20.create_vertex_dtype(node.flags)
+            elif type(node) is scene_3df_22.MeshNode3DF:
+                vertex_dtype = scene_3df_22.create_vertex_dtype(mesh_info.flags)
+            else:
                 continue
 
             # Read vertices
-            if self.version == 20:
-                vertex_dtype = scene_3df_20.create_vertex_dtype(node.flags)
-                print(node.name, vertex_dtype, node.flags)
-            else:
-                vertex_dtype = scene_3df_22.create_vertex_dtype(mesh_info.flags)
             bs.seek(mesh_info.vertices_off)
             vertices = np.frombuffer(
                 bs.getbuffer(),
