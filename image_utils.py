@@ -8,6 +8,6 @@ def rgba_to_floats(pixels: npt.NDArray) -> npt.NDArray:
 
 
 def dxt1_to_rgba(data: bytes, width: int, height: int) -> npt.NDArray:
-    rgba_raw = texture2ddecoder.decode_bc1(data, width, height)
-    rgba_array = np.frombuffer(rgba_raw, np.uint8)
-    return rgba_to_floats(rgba_array)
+    bgra = texture2ddecoder.decode_bc1(data, width, height)
+    rgba = np.frombuffer(bgra, np.uint8).reshape(-1, 4)
+    return rgba_to_floats(rgba[:, [2, 1, 0, 3]]).ravel()
