@@ -1,3 +1,4 @@
+import logging
 import math
 
 import bpy
@@ -51,10 +52,11 @@ class Importer3DF:
 
         # Create empty objects for meshes without vertex positions
         if (
-            mesh_data.vertices.dtype.names is None
+            mesh_data.vertices.size == 0
+            or mesh_data.vertices.dtype.names is None
             or "position" not in mesh_data.vertices.dtype.names
         ):
-            print(f"INFO: Mesh node {node.name} contains no positions")
+            logging.info(f"Mesh node {node.name} contained no vertex positions")
             return self.import_empty_object(node)
 
         # Combine triangle groups
@@ -143,9 +145,10 @@ class Importer3DF:
                                 bone_name = bone_node.name
                                 break
                         if bone_name is None:
-                            print(
-                                "WARNING: Failed to find node with index "
-                                f"{bone_idx} for vertex group"
+                            logging.warning(
+                                "Failed to find bone node with "
+                                f"internal index {bone_idx} "
+                                "for vertex group"
                             )
                             bone_name = str(bone_idx)
                         vertex_group_map[bone_idx] = mesh_obj.vertex_groups.new(

@@ -1,4 +1,5 @@
 from io import BufferedReader
+import logging
 from typing import NamedTuple, Sequence
 import zlib
 
@@ -97,7 +98,7 @@ def read_texture(bs: BinaryReader, has_extra_header: bool = False) -> Texture3DF
             # DXT1
             pixels = image_utils.dxt1_to_rgba(bs.read(data_size), width, height)
         case _:
-            print(f"WARNING: Unimplemented texture type {type_id}")
+            logging.error(f"Unimplemented texture type {type_id}")
             pixels = np.tile([0.0, 0.0, 0.0, 1.0], width * height)
     bs.seek(tex_info_end)
 
@@ -301,9 +302,7 @@ class Reader3DF:
                         )
                     )
                 else:
-                    print(
-                        "WARNING: Unimplemented face type " + str(face_group.face_type)
-                    )
+                    logging.error(f"Unimplemented face type {face_group.face_type}")
 
             mesh_data_map[i] = MeshData3DF(
                 vertices,
