@@ -52,7 +52,7 @@ def read_mesh_info(bs: BinaryReader) -> MeshInfo3DF:
     unk_float = bs.read_float()
     vertices_off = bs.read_uint32()
     faces_off = bs.read_uint32()
-    mesh_transform = bs.read_matrix_3x4()
+    mesh_transform = bs.read_matrix_4x3()
 
     return MeshInfo3DF(
         flags,

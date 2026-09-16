@@ -67,7 +67,8 @@ class Node3DF:
 
 @dataclass(frozen=True, slots=True)
 class BoneNode3DF(Node3DF):
-    unk_floats: list[float]
+    unk_float: float
+    bone_transform: Matrix
 
 
 @dataclass(frozen=True, slots=True)
@@ -301,7 +302,8 @@ def read_node(bs: BinaryReader) -> Node3DF:
                 face_groups,
             )
         case 1:
-            unk_floats = [bs.read_float() for _ in range(13)]
+            unk_float = bs.read_float()
+            bone_transform = bs.read_matrix_3x4()
             bs.seek(52, 1)
 
             return BoneNode3DF(
@@ -313,7 +315,8 @@ def read_node(bs: BinaryReader) -> Node3DF:
                 transform_type,
                 transform,
                 tracks,
-                unk_floats,
+                unk_float,
+                bone_transform,
             )
         case _:
             bs.seek(104, 1)

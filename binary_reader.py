@@ -72,12 +72,16 @@ class BinaryReader(BytesIO):
         return Matrix.LocRotScale(location, rotation, scale)
 
     def read_matrix_3x4(self) -> Matrix:
+        rows = [self.read_vec3f() for _ in range(4)]
+        return Matrix(rows).to_4x4().transposed()
+
+    def read_matrix_4x3(self) -> Matrix:
         rows = [self.read_vec4f() for _ in range(3)]
-        return Matrix(rows).to_4x4()
+        return Matrix(rows).to_4x4().transposed()
 
     def read_matrix_4x4(self) -> Matrix:
         rows = [self.read_vec4f() for _ in range(4)]
-        return Matrix(rows)
+        return Matrix(rows).transposed()
 
     def read_string_block(self, length: int) -> str:
         text = self.read(length).decode(errors="ignore")

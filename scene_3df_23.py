@@ -79,7 +79,8 @@ def read_node(bs: BinaryReader) -> scene_3df_22.Node3DF:
                 face_groups,
             )
         case 1:
-            unk_floats = [bs.read_float() for _ in range(13)]
+            unk_float = bs.read_float()
+            bone_transform = bs.read_matrix_3x4()
             bs.seek(52, 1)
 
             return scene_3df_22.BoneNode3DF(
@@ -90,7 +91,8 @@ def read_node(bs: BinaryReader) -> scene_3df_22.Node3DF:
                 transform_type,
                 transform,
                 tracks,
-                unk_floats,
+                unk_float,
+                bone_transform,
             )
         case _:
             bs.seek(104, 1)
