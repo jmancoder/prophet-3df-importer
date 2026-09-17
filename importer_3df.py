@@ -218,17 +218,18 @@ class Importer3DF:
         node_index: int,
         armature_object: Object,
         parent_bone: EditBone | None,
-        parent_world_transform: Matrix,
     ) -> None:
         node = scene_data.nodes[node_index]
-        transform = parent_world_transform @ node.transform
+        if type(node) is not scene_3df_20.BoneNode3DF and type(node) is not scene_3df_22.BoneNode3DF:
+            logging.error("Bone node must have type BoneNode3DF")
+            return
 
         # Create edit bone
         bone = armature_object.data.edit_bones.new(node.name)
         bone.length = 0.2
         if parent_bone:
             bone.parent = parent_bone
-        bone.matrix = armature_object.matrix_world.inverted() @ transform
+        bone.matrix = armature_object.matrix_world.inverted() @ node.bone_transform.inverted()
 
         # Store bone name and armature for next pass
         bone_map[node_index] = (bone.name, armature_object)
@@ -242,7 +243,6 @@ class Importer3DF:
                     child_idx,
                     armature_object,
                     bone,
-                    transform,
                 )
 
     def import_material(self, material_data: scene_3df_20.Material3DF) -> Material:
@@ -303,7 +303,6 @@ class Importer3DF:
                     root_bone_idx,
                     armature_obj,
                     None,
-                    Matrix.Identity(4),
                 )
             bpy.ops.object.mode_set(mode="OBJECT")
 
@@ -371,7 +370,7 @@ class Importer3DF:
 
             for track in node.tracks:
                 if track.type_id <= 2:
-                    # Location
+                    # Import location track
                     axis = track.type_id
                     for key in track.keys:
                         frame = round(key.time * fps)
@@ -389,7 +388,7 @@ class Importer3DF:
                             index=axis,
                         )
                 elif track.type_id <= 5:
-                    # Rotation
+                    # Import rotation track
                     axis = track.type_id - 3
                     for key in track.keys:
                         frame = round(key.time * fps)
@@ -407,7 +406,7 @@ class Importer3DF:
                             index=axis,
                         )
                 else:
-                    # Scale
+                    # Import scale track
                     axis = track.type_id - 6
                     for key in track.keys:
                         frame = round(key.time * fps)
