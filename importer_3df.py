@@ -128,7 +128,7 @@ class Importer3DF:
                     continue
                 if len(weights) < 4:
                     weights.append(1.0 - sum(weights))
-                    for _ in range(4 - len(weights)):
+                    for _ in range(3 - len(weights)):
                         weights.append(0.0)
 
                 for i, weight in enumerate(weights):
