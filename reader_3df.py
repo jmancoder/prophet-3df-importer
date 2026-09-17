@@ -101,7 +101,6 @@ def read_texture(bs: BinaryReader, has_extra_header: bool = False) -> Texture3DF
             logging.error(f"Unimplemented texture type {type_id}")
             pixels = np.tile([0.0, 0.0, 0.0, 1.0], width * height)
     bs.seek(tex_info_end)
-
     return Texture3DF(
         width,
         height,
@@ -111,16 +110,13 @@ def read_texture(bs: BinaryReader, has_extra_header: bool = False) -> Texture3DF
 
 def tri_strips_to_triangles(indices: npt.NDArray) -> npt.NDArray:
     triangles = []
-
     for i in range(len(indices) - 2):
         if i % 2 == 0:
             tri = (indices[i], indices[i + 1], indices[i + 2])
         else:
             tri = (indices[i], indices[i + 2], indices[i + 1])
-
         if tri[0] != tri[1] and tri[1] != tri[2] and tri[0] != tri[2]:
             triangles.append(tri)
-
     return np.asarray(triangles, dtype=np.int64).reshape(-1, 3)
 
 
@@ -139,7 +135,6 @@ def decompress_chunk_stream(bs: BinaryReader) -> BinaryReader:
         bs_out = BinaryReader(zlib.decompress(bs.read(decomp_size), wbits=-15))
     else:
         raise ValueError(f"Unknown compression mode {mode_a}")
-
     return bs_out
 
 
@@ -318,5 +313,4 @@ class Reader3DF:
         textures: list[Texture3DF] = []
         for i in range(header.texture_count):
             textures.append(read_texture(bs, has_extra_header=self.version == 23))
-
         return SceneData3DF(materials, nodes, mesh_data_map, textures)

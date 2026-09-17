@@ -72,7 +72,6 @@ def read_header(bs: BinaryReader) -> Header3DF:
     bs.read_uint32()
     node_count = bs.read_uint32()
     node_off = bs.read_uint32()
-
     return Header3DF(
         compress_mode,
         node_chunk_size,
@@ -111,7 +110,6 @@ def read_material(bs: BinaryReader) -> scene_3df_20.Material3DF:
         bs.seek(material_end)
     else:
         properties = []
-
     return scene_3df_20.Material3DF(
         name,
         diffuse_color,
@@ -136,7 +134,6 @@ def read_track(bs: BinaryReader) -> scene_3df_20.Track3DF:
     bs.seek(key_off - HEADER_SIZE)
     keys = [scene_3df_20.read_keyframe(bs) for _ in range(key_count)]
     bs.seek(track_end_off)
-
     return scene_3df_20.Track3DF(type_id, keys)
 
 
@@ -170,7 +167,6 @@ def create_vertex_dtype(bitmask: int) -> npt.DTypeLike:
         uv_count = 3
     if uv_count > 0:
         fields.append((f"uvs", np.float32, (uv_count, 2)))
-
     return np.dtype(fields)
 
 
@@ -233,7 +229,6 @@ def read_node(bs: BinaryReader) -> Node3DF:
                 bs.seek(node_end_off)
             else:
                 face_groups = []
-
             return MeshNode3DF(
                 node_name,
                 node_type,
@@ -250,7 +245,6 @@ def read_node(bs: BinaryReader) -> Node3DF:
             unk_float = bs.read_float()
             bone_transform = bs.read_matrix_3x4()
             bs.seek(52, 1)
-
             return BoneNode3DF(
                 node_name,
                 node_type,
@@ -264,7 +258,6 @@ def read_node(bs: BinaryReader) -> Node3DF:
             )
         case _:
             bs.seek(104, 1)
-
             return Node3DF(
                 node_name,
                 node_type,
@@ -282,7 +275,6 @@ def read_mesh_info(bs: BinaryReader) -> MeshInfo3DF:
     unk_float = bs.read_float()
     vertices_off = bs.read_uint32()
     faces_off = bs.read_uint32()
-
     return MeshInfo3DF(
         flags,
         unk_int,

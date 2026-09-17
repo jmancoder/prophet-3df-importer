@@ -34,14 +34,12 @@ class Importer3DF:
         node_obj = bpy.data.objects.new(node.name, None)
         node_obj.empty_display_size = 0.2
         self.context.collection.objects.link(node_obj)
-
         return node_obj
 
     def import_camera_object(self, node: scene_3df_20.Node3DF | scene_3df_22.Node3DF):
         camera = bpy.data.cameras.new(node.name)
         camera_obj = bpy.data.objects.new(node.name, camera)
         self.context.collection.objects.link(camera_obj)
-
         return camera_obj
 
     def import_mesh_object(self, scene_data: SceneData3DF, node_index: int) -> Object:
@@ -159,7 +157,6 @@ class Importer3DF:
                         weight,
                         "ADD",
                     )
-
         return mesh_obj
 
     def create_objects(
@@ -265,7 +262,6 @@ class Importer3DF:
                 links.new(img_node.outputs["Color"], bsdf.inputs["Base Color"])
                 links.new(img_node.outputs["Alpha"], bsdf.inputs["Alpha"])
                 break
-
         return mat
 
     def import_scene(self, scene_data: SceneData3DF) -> None:

@@ -59,7 +59,6 @@ class IMPORT_OT_SCENE_3df(Operator, ImportHelper):
 
         importer = Importer3DF(context, self.import_anims)
         importer.import_scene(scene_data)
-
         return {"FINISHED"}
 
 

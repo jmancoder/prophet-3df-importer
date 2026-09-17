@@ -104,7 +104,6 @@ def read_header(bs: BinaryReader) -> Header3DF:
     bs.read_int32()
     bs.read_int32()
     bs.seek(80, 1)
-
     return Header3DF(
         compress_mode,
         node_chunk_size,
@@ -123,7 +122,6 @@ def read_material_property(bs: BinaryReader) -> MaterialProperty3DF:
     value = bs.read_uint32()
     unk_0 = bs.read_uint32()
     unk_1 = bs.read_uint32()
-
     return MaterialProperty3DF(type_id, value, unk_0, unk_1)
 
 
@@ -149,7 +147,6 @@ def read_material(bs: BinaryReader) -> Material3DF:
         bs.seek(material_end)
     else:
         properties = []
-
     return Material3DF(
         name,
         diffuse_color,
@@ -166,7 +163,6 @@ def read_face_group(bs: BinaryReader) -> FaceGroup3DF:
     bs.read_uint16()
     material_idx = bs.read_uint16()
     bs.read_uint16()
-
     return FaceGroup3DF(face_type, face_count, bone_indexes, material_idx)
 
 
@@ -196,7 +192,6 @@ def read_track(bs: BinaryReader) -> Track3DF:
     bs.seek(key_off - HEADER_SIZE)
     keys = [read_keyframe(bs) for _ in range(key_count)]
     bs.seek(track_end_off)
-
     return Track3DF(type_id, keys)
 
 
@@ -228,7 +223,6 @@ def create_vertex_dtype(bitmask: int) -> npt.DTypeLike:
         uv_count = 3
     if uv_count > 0:
         fields.append((f"uvs", np.float32, (uv_count, 2)))
-
     return np.dtype(fields)
 
 
@@ -287,7 +281,6 @@ def read_node(bs: BinaryReader) -> Node3DF:
                 bs.seek(node_end_off)
             else:
                 face_groups = []
-
             return MeshNode3DF(
                 name,
                 node_type,
@@ -305,7 +298,6 @@ def read_node(bs: BinaryReader) -> Node3DF:
             unk_float = bs.read_float()
             bone_transform = bs.read_matrix_3x4()
             bs.seek(52, 1)
-
             return BoneNode3DF(
                 name,
                 node_type,
@@ -320,7 +312,6 @@ def read_node(bs: BinaryReader) -> Node3DF:
             )
         case _:
             bs.seek(104, 1)
-
             return Node3DF(
                 name,
                 node_type,
@@ -337,7 +328,6 @@ def read_mesh_info(bs: BinaryReader) -> MeshInfo3DF:
     flags = bs.read_uint32()
     vertices_off = bs.read_uint32()
     faces_off = bs.read_uint32()
-
     return MeshInfo3DF(
         flags,
         vertices_off,

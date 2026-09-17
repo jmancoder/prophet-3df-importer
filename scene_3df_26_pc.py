@@ -32,7 +32,6 @@ def read_header(bs: BinaryReader) -> scene_3df_20.Header3DF:
     bs.read_uint32()
     node_count = bs.read_uint32()
     node_off = bs.read_uint32()
-
     return scene_3df_20.Header3DF(
         compress_mode,
         node_chunk_size,
@@ -53,7 +52,6 @@ def read_mesh_info(bs: BinaryReader) -> MeshInfo3DF:
     vertices_off = bs.read_uint32()
     faces_off = bs.read_uint32()
     mesh_transform = bs.read_matrix_4x3()
-
     return MeshInfo3DF(
         flags,
         unk_int,

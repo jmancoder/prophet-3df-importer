@@ -27,7 +27,6 @@ def read_header(bs: BinaryReader) -> Header3DF:
     bs.read_uint32()
     node_count = bs.read_uint32()
     node_off = bs.read_uint32()
-
     return Header3DF(
         compress_mode,
         mesh_info_count,
