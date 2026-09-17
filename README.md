@@ -1,5 +1,5 @@
 # Prophet 3DF Importer
-This Blender add-on allows you to import 3DF scene files from certain [Prophet](https://www.pcgamingwiki.com/wiki/Engine:Prophet) engine games. It is still in active development and does not support all versions of the format yet.
+This Blender add-on allows you to import 3DF scene files from [Prophet](https://www.pcgamingwiki.com/wiki/Engine:Prophet) engine games. It is still in active development and does not support all versions of the format yet.
 
 ## Usage
 1. Extract the GAME.BRA archive using [brapack](https://github.com/RikuKH3/brapack/releases/tag/1.4).
@@ -23,7 +23,6 @@ This Blender add-on allows you to import 3DF scene files from certain [Prophet](
 
 ## TODO
 - Test on more games and platforms
-- Read textures more consistently
+- Implement all texture types
 - Add full support for 3DF versions 20 and 21
-- Fix animation import
 - Import all node types
