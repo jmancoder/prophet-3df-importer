@@ -12,8 +12,8 @@ class MeshInfo3DF(NamedTuple):
     flags: int
     unk_int: int
     unk_float: float
-    vertices_off: int
-    faces_off: int
+    vertex_off: int
+    face_off: int
     transform: Matrix
 
 
@@ -49,14 +49,14 @@ def read_mesh_info(bs: BinaryReader) -> MeshInfo3DF:
     flags = bs.read_uint32()
     unk_int = bs.read_uint32()
     unk_float = bs.read_float()
-    vertices_off = bs.read_uint32()
-    faces_off = bs.read_uint32()
-    mesh_transform = bs.read_matrix_4x3()
+    vertex_off = bs.read_uint32()
+    face_off = bs.read_uint32()
+    mesh_transform = bs.read_matrix_3x4()
     return MeshInfo3DF(
         flags,
         unk_int,
         unk_float,
-        vertices_off,
-        faces_off,
+        vertex_off,
+        face_off,
         mesh_transform,
     )

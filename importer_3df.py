@@ -220,7 +220,10 @@ class Importer3DF:
         parent_bone: EditBone | None,
     ) -> None:
         node = scene_data.nodes[node_index]
-        if type(node) is not scene_3df_20.BoneNode3DF and type(node) is not scene_3df_22.BoneNode3DF:
+        if (
+            type(node) is not scene_3df_20.BoneNode3DF
+            and type(node) is not scene_3df_22.BoneNode3DF
+        ):
             logging.error("Bone node must have type BoneNode3DF")
             return
 
@@ -229,7 +232,9 @@ class Importer3DF:
         bone.length = 0.2
         if parent_bone:
             bone.parent = parent_bone
-        bone.matrix = armature_object.matrix_world.inverted() @ node.bone_transform.inverted()
+        bone.matrix = (
+            armature_object.matrix_world.inverted() @ node.bone_transform.inverted()
+        )
 
         # Store bone name and armature for next pass
         bone_map[node_index] = (bone.name, armature_object)
@@ -405,7 +410,7 @@ class Importer3DF:
                             frame=frame,
                             index=axis,
                         )
-                else:
+                elif track.type_id <= 8:
                     # Import scale track
                     axis = track.type_id - 6
                     for key in track.keys:
@@ -423,5 +428,26 @@ class Importer3DF:
                             frame=frame,
                             index=axis,
                         )
+                elif track.type_id == 9:
+                    # Import transform track
+                    for key in track.keys:
+                        frame = round(key.time * fps)
+                        pose_bone.matrix_basis = rest_local_inverse @ key.value
+                        pose_bone.keyframe_insert(
+                            data_path="location",
+                            frame=frame,
+                        )
+                        pose_bone.keyframe_insert(
+                            data_path="rotation_euler",
+                            frame=frame,
+                        )
+                        pose_bone.keyframe_insert(
+                            data_path="scale",
+                            frame=frame,
+                        )
+                else:
+                    logging.warning(
+                        f"Skipping animation track of unimplemented type {track.type_id}"
+                    )
 
             bpy.ops.object.mode_set(mode="OBJECT")

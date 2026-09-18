@@ -244,7 +244,7 @@ class Reader3DF:
                 continue
 
             # Read vertices
-            bs.seek(mesh_info.vertices_off)
+            bs.seek(mesh_info.vertex_off)
             vertices = np.frombuffer(
                 bs.getbuffer(),
                 vertex_dtype,
@@ -258,7 +258,7 @@ class Reader3DF:
             else:
                 face_dtype = np.uint16
             triangle_groups: list[TriangleGroup3DF] = []
-            bs.seek(mesh_info.faces_off)
+            bs.seek(mesh_info.face_off)
             for face_group in node.face_groups:
                 if face_group.face_type == 1:
                     # Read triangle strips

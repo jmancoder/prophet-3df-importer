@@ -47,8 +47,9 @@ class IMPORT_OT_SCENE_3df(Operator, ImportHelper):
 
     import_anims: BoolProperty(
         name="Import Animations",
-        description="Import animation tracks from the file. WARNING: Currently broken.",
-        default=False,
+        description="Import animation tracks as a single action. "
+        "WARNING: Currently broken on 3DF version 20.",
+        default=True,
     )
 
     def execute(self, context: Context):

@@ -45,7 +45,7 @@ class FaceGroup3DF(NamedTuple):
 
 class Key3DF(NamedTuple):
     time: float
-    value: float
+    value: float | Matrix
 
 
 class Track3DF(NamedTuple):
@@ -80,8 +80,8 @@ class MeshNode3DF(Node3DF):
 
 class MeshInfo3DF(NamedTuple):
     flags: int
-    vertices_off: int
-    faces_off: int
+    vertex_off: int
+    face_off: int
 
 
 def read_header(bs: BinaryReader) -> Header3DF:
@@ -97,8 +97,8 @@ def read_header(bs: BinaryReader) -> Header3DF:
     material_off = bs.read_uint32()
     texture_count = bs.read_uint32()
     bs.read_uint32()
-    nodes_count = bs.read_uint32()
-    nodes_off = bs.read_uint32()
+    node_count = bs.read_uint32()
+    node_off = bs.read_uint32()
     bs.read_uint32()
     color = bs.read_bgra()
     bs.read_int32()
@@ -112,8 +112,8 @@ def read_header(bs: BinaryReader) -> Header3DF:
         material_count,
         material_off,
         texture_count,
-        nodes_count,
-        nodes_off,
+        node_count,
+        node_off,
     )
 
 
@@ -166,13 +166,19 @@ def read_face_group(bs: BinaryReader) -> FaceGroup3DF:
     return FaceGroup3DF(face_type, face_count, bone_indexes, material_idx)
 
 
-def read_keyframe(bs: BinaryReader) -> Key3DF:
+def read_float_keyframe(bs: BinaryReader) -> Key3DF:
     time = bs.read_float()
     value = bs.read_float()
     bs.read_float()
     bs.read_float()
     bs.read_float()
     bs.read_float()
+    return Key3DF(time, value)
+
+
+def read_matrix_keyframe(bs: BinaryReader) -> Key3DF:
+    time = bs.read_float()
+    value = bs.read_matrix_3x4()
     return Key3DF(time, value)
 
 
@@ -190,7 +196,10 @@ def read_track(bs: BinaryReader) -> Track3DF:
     # Read keyframes
     track_end_off = bs.tell()
     bs.seek(key_off - HEADER_SIZE)
-    keys = [read_keyframe(bs) for _ in range(key_count)]
+    if type_id == 9:
+        keys = [read_matrix_keyframe(bs) for _ in range(key_count)]
+    else:
+        keys = [read_float_keyframe(bs) for _ in range(key_count)]
     bs.seek(track_end_off)
     return Track3DF(type_id, keys)
 
@@ -235,16 +244,20 @@ def read_node(bs: BinaryReader) -> Node3DF:
     internal_idx = bs.read_int32()
     child_index_off = bs.read_uint32()
     bs.seek(124, 1)
-    unk_floats_off = bs.read_uint32()
+    unk_point_off = bs.read_uint32()
     track_count = bs.read_uint32()
     track_off = bs.read_uint32()
     transform_type = bs.read_uint32()
     if transform_type == 0:
         transform = bs.read_loc_rot_scale()
-        bs.seek(28, 1)
+        bs.seek(12, 1)
     else:
-        transform = bs.read_matrix_4x4()
-    bs.seek(20, 1)
+        transform = bs.read_matrix_3x4()
+    bs.read_int32()
+    bs.read_float()
+    bounds_min = bs.read_vec3f()
+    bounds_max = bs.read_vec3f()
+    bs.seek(4, 1)
     face_group_off = bs.read_uint32()
     bs.seek(28, 1)
 
@@ -326,10 +339,10 @@ def read_node(bs: BinaryReader) -> Node3DF:
 
 def read_mesh_info(bs: BinaryReader) -> MeshInfo3DF:
     flags = bs.read_uint32()
-    vertices_off = bs.read_uint32()
-    faces_off = bs.read_uint32()
+    vertex_off = bs.read_uint32()
+    face_off = bs.read_uint32()
     return MeshInfo3DF(
         flags,
-        vertices_off,
-        faces_off,
+        vertex_off,
+        face_off,
     )

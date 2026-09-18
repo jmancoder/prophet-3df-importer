@@ -52,8 +52,8 @@ class MeshInfo3DF(NamedTuple):
     flags: int
     unk_int: int
     unk_float: float
-    vertices_off: int
-    faces_off: int
+    vertex_off: int
+    face_off: int
 
 
 def read_header(bs: BinaryReader) -> Header3DF:
@@ -132,7 +132,10 @@ def read_track(bs: BinaryReader) -> scene_3df_20.Track3DF:
     # Read keyframes
     track_end_off = bs.tell()
     bs.seek(key_off - HEADER_SIZE)
-    keys = [scene_3df_20.read_keyframe(bs) for _ in range(key_count)]
+    if type_id == 9:
+        keys = [scene_3df_20.read_matrix_keyframe(bs) for _ in range(key_count)]
+    else:
+        keys = [scene_3df_20.read_float_keyframe(bs) for _ in range(key_count)]
     bs.seek(track_end_off)
     return scene_3df_20.Track3DF(type_id, keys)
 
@@ -181,17 +184,21 @@ def read_node(bs: BinaryReader) -> Node3DF:
     bs.read_int32()
     unk_vec_0 = bs.read_vec3f()
     unk_vec_1 = bs.read_vec3f()
-    unk_floats_off = bs.read_uint32()
+    unk_point_off = bs.read_uint32()
     track_count = bs.read_uint32()
     track_off = bs.read_uint32()
     transform_type = bs.read_uint32()
     if transform_type == 0:
         transform = bs.read_loc_rot_scale()
-        bs.seek(28, 1)
+        bs.seek(12, 1)
     else:
-        transform = bs.read_matrix_4x4()
-    bs.seek(84, 1)
-    face_groups_off = bs.read_uint32()
+        transform = bs.read_matrix_3x4()
+    bs.read_int32()
+    bs.read_float()
+    bounds_min = bs.read_vec3f()
+    bounds_max = bs.read_vec3f()
+    bs.seek(68, 1)
+    face_group_off = bs.read_uint32()
     bs.seek(28, 1)
 
     # Read child indexes
@@ -220,9 +227,9 @@ def read_node(bs: BinaryReader) -> Node3DF:
             bs.seek(92, 1)
 
             # Read face groups
-            if face_groups_off > 0:
+            if face_group_off > 0:
                 node_end_off = bs.tell()
-                bs.seek(face_groups_off - HEADER_SIZE)
+                bs.seek(face_group_off - HEADER_SIZE)
                 face_groups = [
                     scene_3df_20.read_face_group(bs) for _ in range(face_groups_count)
                 ]
@@ -273,12 +280,12 @@ def read_mesh_info(bs: BinaryReader) -> MeshInfo3DF:
     flags = bs.read_uint32()
     unk_int = bs.read_uint32()
     unk_float = bs.read_float()
-    vertices_off = bs.read_uint32()
-    faces_off = bs.read_uint32()
+    vertex_off = bs.read_uint32()
+    face_off = bs.read_uint32()
     return MeshInfo3DF(
         flags,
         unk_int,
         unk_float,
-        vertices_off,
-        faces_off,
+        vertex_off,
+        face_off,
     )
