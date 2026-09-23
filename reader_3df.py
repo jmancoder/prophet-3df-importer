@@ -66,7 +66,7 @@ def read_texture(bs: BinaryReader, has_extra_header: bool = False) -> Texture3DF
             if has_extra_header:
                 bs.seek(64, 1)
             indices = np.frombuffer(bs.getbuffer(), np.uint8, width * height, bs.tell())
-            pixels = image_utils.rgba_to_floats(palette[indices]).ravel()
+            pixels = image_utils.rgba_to_floats(palette[indices])
         case 3:
             # 4-bit paletted
             palette = np.frombuffer(bs.getbuffer(), np.uint8, 64, bs.tell()).reshape(
@@ -82,7 +82,20 @@ def read_texture(bs: BinaryReader, has_extra_header: bool = False) -> Texture3DF
             indices = np.empty(indices_raw.size * 2, dtype=np.uint8)
             indices[0::2] = indices_raw >> 4
             indices[1::2] = indices_raw & 0xF
-            pixels = image_utils.rgba_to_floats(palette[indices]).ravel()
+            pixels = image_utils.rgba_to_floats(palette[indices])
+        case 5:
+            # BGR565
+            raw_pixels = np.frombuffer(
+                bs.getbuffer(), np.uint16, width * height, bs.tell()
+            )
+            r = ((raw_pixels >> 11) & 0x1F) * 255 // 0x1F
+            g = ((raw_pixels >> 5) & 0x3F) * 255 // 0x3F
+            b = (raw_pixels & 0x1F) * 255 // 0x1F
+            pixels = np.empty((raw_pixels.size, 4), dtype=np.float32)
+            pixels[:, 0] = b
+            pixels[:, 1] = g
+            pixels[:, 2] = r
+            pixels = image_utils.rgba_to_floats(pixels)
         case 6:
             # BGRA4444
             raw_pixels = np.frombuffer(
@@ -98,7 +111,10 @@ def read_texture(bs: BinaryReader, has_extra_header: bool = False) -> Texture3DF
             # DXT1
             pixels = image_utils.dxt1_to_rgba(bs.read(data_size), width, height)
         case _:
-            logging.error(f"Unimplemented texture type {type_id}")
+            logging.error(
+                f"Unimplemented texture type {type_id} with dimensions "
+                f"{width}x{height} at {hex(data_off)} (chunk relative)"
+            )
             pixels = np.tile([0.0, 0.0, 0.0, 1.0], width * height)
     bs.seek(tex_info_end)
     return Texture3DF(
