@@ -9,6 +9,7 @@ import numpy.typing as npt
 from .binary_reader import BinaryReader
 from . import image_utils
 from . import scene_3df_20
+from . import scene_3df_21
 from . import scene_3df_22
 from . import scene_3df_23
 from . import scene_3df_26_ds
@@ -35,8 +36,8 @@ class MeshData3DF(NamedTuple):
 
 class SceneData3DF(NamedTuple):
     materials: list[scene_3df_20.Material3DF]
-    nodes: Sequence[scene_3df_20.Node3DF | scene_3df_22.Node3DF]
-    mesh_map: dict[int, MeshData3DF]
+    nodes: Sequence[scene_3df_20.Node3DF]
+    mesh_data_map: dict[int, MeshData3DF]
     textures: list[Texture3DF]
 
 
@@ -174,36 +175,45 @@ class Reader3DF:
         # Load and read version-specific header
         self.version = bs.read_uint32()
         if self.version == 20:
-            header_size = scene_3df_20.HEADER_SIZE
+            header_size = 176
             bs = BinaryReader(f.read(header_size - 8))
             header = scene_3df_20.read_header(bs)
+
+        elif self.version == 21:
+            header_size = 400
+            bs = BinaryReader(f.read(header_size - 8))
+            header = scene_3df_21.read_header(bs)
+
         elif self.version == 22 or self.version == 23:
-            header_size = scene_3df_22.HEADER_SIZE
+            header_size = 412
             bs = BinaryReader(f.read(header_size - 8))
             header = scene_3df_22.read_header(bs)
+
         elif self.version == 26:
             if self.platform == "DS":
-                header_size = scene_3df_26_ds.HEADER_SIZE
+                header_size = 56
                 bs = BinaryReader(f.read(header_size - 8))
                 header = scene_3df_26_ds.read_header(bs)
                 raise NotImplementedError(
                     f"Unimplemented self.platform {self.platform} for self.version {self.version}"
                 )
             elif self.platform == "PC":
-                header_size = scene_3df_26_pc.HEADER_SIZE
+                header_size = 412
                 bs = BinaryReader(f.read(header_size - 8))
                 header = scene_3df_26_pc.read_header(bs)
             elif self.platform == "PS2":
-                header_size = scene_3df_22.HEADER_SIZE
+                header_size = 412
                 bs = BinaryReader(f.read(header_size - 8))
                 header = scene_3df_22.read_header(bs)
                 raise NotImplementedError(
                     f"Unimplemented platform {self.platform} for version {self.version}"
                 )
+
             else:
                 raise NotImplementedError(
                     f"Unimplemented platform {self.platform} for version {self.version}"
                 )
+
         else:
             raise NotImplementedError(f"Unimplemented 3DF version {self.version}")
 
@@ -216,21 +226,21 @@ class Reader3DF:
         bs.seek(header.material_off - header_size)
         if self.version == 20:
             materials = [
-                scene_3df_20.read_material(bs) for _ in range(header.material_count)
+                scene_3df_20.read_material(bs, header_size) for _ in range(header.material_count)
             ]
         else:
             materials = [
-                scene_3df_22.read_material(bs) for _ in range(header.material_count)
+                scene_3df_21.read_material(bs, header_size) for _ in range(header.material_count)
             ]
 
         # Read nodes
         bs.seek(header.node_off - header_size)
         if self.version == 20:
-            nodes = [scene_3df_20.read_node(bs) for _ in range(header.node_count)]
-        elif self.version == 22:
-            nodes = [scene_3df_22.read_node(bs) for _ in range(header.node_count)]
+            nodes = [scene_3df_20.read_node(bs, header_size) for _ in range(header.node_count)]
+        elif self.version == 21 or self.version == 22:
+            nodes = [scene_3df_21.read_node(bs, header_size) for _ in range(header.node_count)]
         else:
-            nodes = [scene_3df_23.read_node(bs) for _ in range(header.node_count)]
+            nodes = [scene_3df_23.read_node(bs, header_size) for _ in range(header.node_count)]
 
         # Load mesh chunk
         f.seek(header_size + header.node_chunk_size)
@@ -239,7 +249,7 @@ class Reader3DF:
             bs = _decompress_chunk_stream(bs)
 
         # Read mesh info entries
-        if self.version == 20:
+        if self.version == 20 or self.version == 21:
             mesh_info_entries = [
                 scene_3df_20.read_mesh_info(bs) for _ in range(header.node_count)
             ]
@@ -255,12 +265,17 @@ class Reader3DF:
         # Read meshes
         mesh_data_map: dict[int, MeshData3DF] = {}
         for i, (node, mesh_info) in enumerate(zip(nodes, mesh_info_entries)):
-            if type(node) is scene_3df_20.MeshNode3DF:
-                vertex_dtype = scene_3df_20.create_vertex_dtype(node.flags)
-            elif type(node) is scene_3df_22.MeshNode3DF:
-                vertex_dtype = scene_3df_22.create_vertex_dtype(mesh_info.flags)
-            else:
+            if node.type_id != 0:
                 continue
+            if node.vertex_count == 0:
+                continue
+
+            if self.version == 20:
+                vertex_dtype = scene_3df_20.create_vertex_dtype(node.flags)
+            elif self.version == 21:
+                vertex_dtype = scene_3df_21.create_vertex_dtype(node.flags)
+            else:
+                vertex_dtype = scene_3df_21.create_vertex_dtype(mesh_info.flags)
 
             # Read vertices
             bs.seek(mesh_info.vertex_off)

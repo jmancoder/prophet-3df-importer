@@ -7,8 +7,6 @@ import numpy.typing as npt
 
 from .binary_reader import BinaryReader
 
-HEADER_SIZE = 176
-
 
 class Header3DF(NamedTuple):
     compress_mode: int
@@ -125,7 +123,7 @@ def read_material_property(bs: BinaryReader) -> MaterialProperty3DF:
     return MaterialProperty3DF(type_id, value, unk_0, unk_1)
 
 
-def read_material(bs: BinaryReader) -> Material3DF:
+def read_material(bs: BinaryReader, header_size: int) -> Material3DF:
     name = bs.read_string_block(12)
     property_count = bs.read_uint32()
     property_off = bs.read_uint32()
@@ -142,7 +140,7 @@ def read_material(bs: BinaryReader) -> Material3DF:
 
     # Read properties
     if property_count > 0 and property_off > 0:
-        bs.seek(property_off - HEADER_SIZE)
+        bs.seek(property_off - header_size)
         properties = [read_material_property(bs) for _ in range(property_count)]
         bs.seek(material_end)
     else:
@@ -182,7 +180,7 @@ def read_matrix_keyframe(bs: BinaryReader) -> Key3DF:
     return Key3DF(time, value)
 
 
-def read_track(bs: BinaryReader) -> Track3DF:
+def read_track(bs: BinaryReader, header_size: int) -> Track3DF:
     type_id = bs.read_uint32()
     bs.read_uint32()
     bs.read_uint32()
@@ -195,7 +193,7 @@ def read_track(bs: BinaryReader) -> Track3DF:
 
     # Read keyframes
     track_end_off = bs.tell()
-    bs.seek(key_off - HEADER_SIZE)
+    bs.seek(key_off - header_size)
     if type_id == 9:
         keys = [read_matrix_keyframe(bs) for _ in range(key_count)]
     else:
@@ -235,9 +233,9 @@ def create_vertex_dtype(bitmask: int) -> npt.DTypeLike:
     return np.dtype(fields)
 
 
-def read_node(bs: BinaryReader) -> Node3DF:
+def read_node(bs: BinaryReader, header_size: int) -> Node3DF:
     name = bs.read_string_block(12)
-    node_type = bs.read_uint32()
+    type_id = bs.read_uint32()
     flags = bs.read_uint32()
     bs.read_int32()
     child_index_count = bs.read_int32()
@@ -264,7 +262,7 @@ def read_node(bs: BinaryReader) -> Node3DF:
     # Read child indexes
     if child_index_count > 0:
         node_end_off = bs.tell()
-        bs.seek(child_index_off - HEADER_SIZE)
+        bs.seek(child_index_off - header_size)
         child_indexes = [bs.read_uint32() for _ in range(child_index_count)]
         bs.seek(node_end_off)
     else:
@@ -273,13 +271,13 @@ def read_node(bs: BinaryReader) -> Node3DF:
     # Read animation tracks
     if track_count > 0:
         node_end_off = bs.tell()
-        bs.seek(track_off - HEADER_SIZE)
-        tracks = [read_track(bs) for _ in range(track_count)]
+        bs.seek(track_off - header_size)
+        tracks = [read_track(bs, header_size) for _ in range(track_count)]
         bs.seek(node_end_off)
     else:
         tracks = []
 
-    match node_type:
+    match type_id:
         case 0:
             vertex_count = bs.read_uint32()
             face_idx_count = bs.read_uint32()
@@ -289,14 +287,14 @@ def read_node(bs: BinaryReader) -> Node3DF:
             # Read face groups
             if face_group_off > 0:
                 node_end_off = bs.tell()
-                bs.seek(face_group_off - HEADER_SIZE)
+                bs.seek(face_group_off - header_size)
                 face_groups = [read_face_group(bs) for _ in range(face_group_count)]
                 bs.seek(node_end_off)
             else:
                 face_groups = []
             return MeshNode3DF(
                 name,
-                node_type,
+                type_id,
                 flags,
                 internal_idx,
                 child_indexes,
@@ -313,7 +311,7 @@ def read_node(bs: BinaryReader) -> Node3DF:
             bs.seek(52, 1)
             return BoneNode3DF(
                 name,
-                node_type,
+                type_id,
                 flags,
                 internal_idx,
                 child_indexes,
@@ -327,7 +325,7 @@ def read_node(bs: BinaryReader) -> Node3DF:
             bs.seek(104, 1)
             return Node3DF(
                 name,
-                node_type,
+                type_id,
                 flags,
                 internal_idx,
                 child_indexes,

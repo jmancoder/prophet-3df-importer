@@ -5,8 +5,6 @@ from mathutils import Matrix
 from .binary_reader import BinaryReader
 from . import scene_3df_20
 
-HEADER_SIZE = 412
-
 
 class MeshInfo3DF(NamedTuple):
     flags: int

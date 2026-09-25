@@ -1,12 +1,11 @@
 from .binary_reader import BinaryReader
 from . import scene_3df_20
-from . import scene_3df_22
 
 
-def read_node(bs: BinaryReader) -> scene_3df_22.Node3DF:
-    node_name = bs.read_string_block(16)
-    node_type = bs.read_uint32()
-    bs.read_int32()
+def read_node(bs: BinaryReader, header_size: int) -> scene_3df_20.Node3DF:
+    name = bs.read_string_block(16)
+    type_id = bs.read_uint32()
+    flags = bs.read_uint32()
     bs.read_int32()
     child_index_count = bs.read_int32()
     internal_idx = bs.read_int32()
@@ -33,7 +32,7 @@ def read_node(bs: BinaryReader) -> scene_3df_22.Node3DF:
     # Read child indexes
     if child_index_count > 0:
         node_end_off = bs.tell()
-        bs.seek(child_index_off - scene_3df_22.HEADER_SIZE)
+        bs.seek(child_index_off - header_size)
         child_indexes = [bs.read_uint32() for _ in range(child_index_count)]
         bs.seek(node_end_off)
     else:
@@ -42,13 +41,16 @@ def read_node(bs: BinaryReader) -> scene_3df_22.Node3DF:
     # Read animation tracks
     if track_count > 0:
         node_end_off = bs.tell()
-        bs.seek(track_off - scene_3df_22.HEADER_SIZE)
-        tracks = [scene_3df_22.read_track(bs) for _ in range(track_count)]
+        bs.seek(track_off - header_size)
+        tracks = [
+            scene_3df_20.read_track(bs, header_size)
+            for _ in range(track_count)
+        ]
         bs.seek(node_end_off)
     else:
         tracks = []
 
-    match node_type:
+    match type_id:
         case 0:
             vertex_count = bs.read_uint32()
             face_idx_count = bs.read_uint32()
@@ -58,16 +60,17 @@ def read_node(bs: BinaryReader) -> scene_3df_22.Node3DF:
             # Read face groups
             if face_group_off > 0:
                 node_end_off = bs.tell()
-                bs.seek(face_group_off - scene_3df_22.HEADER_SIZE)
+                bs.seek(face_group_off - header_size)
                 face_groups = [
                     scene_3df_20.read_face_group(bs) for _ in range(face_groups_count)
                 ]
                 bs.seek(node_end_off)
             else:
                 face_groups = []
-            return scene_3df_22.MeshNode3DF(
-                node_name,
-                node_type,
+            return scene_3df_20.MeshNode3DF(
+                name,
+                type_id,
+                flags,
                 internal_idx,
                 child_indexes,
                 transform_type,
@@ -81,9 +84,10 @@ def read_node(bs: BinaryReader) -> scene_3df_22.Node3DF:
             unk_float = bs.read_float()
             bone_transform = bs.read_matrix_3x4()
             bs.seek(52, 1)
-            return scene_3df_22.BoneNode3DF(
-                node_name,
-                node_type,
+            return scene_3df_20.BoneNode3DF(
+                name,
+                type_id,
+                flags,
                 internal_idx,
                 child_indexes,
                 transform_type,
@@ -94,9 +98,10 @@ def read_node(bs: BinaryReader) -> scene_3df_22.Node3DF:
             )
         case _:
             bs.seek(104, 1)
-            return scene_3df_22.Node3DF(
-                node_name,
-                node_type,
+            return scene_3df_20.Node3DF(
+                name,
+                type_id,
+                flags,
                 internal_idx,
                 child_indexes,
                 transform_type,

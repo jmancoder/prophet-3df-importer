@@ -16,7 +16,6 @@ from mathutils import Matrix
 import numpy as np
 
 from . import scene_3df_20
-from . import scene_3df_22
 from .reader_3df import SceneData3DF
 
 
@@ -28,15 +27,13 @@ class Importer3DF:
         self.images: list[Image] = []
         self.materials: list[Material] = []
 
-    def import_empty_object(
-        self, node: scene_3df_20.Node3DF | scene_3df_22.Node3DF
-    ) -> Object:
+    def import_empty_object(self, node: scene_3df_20.Node3DF) -> Object:
         node_obj = bpy.data.objects.new(node.name, None)
         node_obj.empty_display_size = 0.2
         self.context.collection.objects.link(node_obj)
         return node_obj
 
-    def import_camera_object(self, node: scene_3df_20.Node3DF | scene_3df_22.Node3DF):
+    def import_camera_object(self, node: scene_3df_20.Node3DF):
         camera = bpy.data.cameras.new(node.name)
         camera_obj = bpy.data.objects.new(node.name, camera)
         self.context.collection.objects.link(camera_obj)
@@ -44,14 +41,13 @@ class Importer3DF:
 
     def import_mesh_object(self, scene_data: SceneData3DF, node_index: int) -> Object:
         node = scene_data.nodes[node_index]
-        if node_index not in scene_data.mesh_map:
+        if node_index not in scene_data.mesh_data_map:
             return self.import_empty_object(node)
-        mesh_data = scene_data.mesh_map[node_index]
+        mesh_data = scene_data.mesh_data_map[node_index]
 
         # Create empty objects for meshes without vertex positions
         if (
-            mesh_data.vertices.size == 0
-            or mesh_data.vertices.dtype.names is None
+            mesh_data.vertices.dtype.names is None
             or "position" not in mesh_data.vertices.dtype.names
         ):
             logging.info(f"Mesh node {node.name} contained no vertex positions")
@@ -177,22 +173,23 @@ class Importer3DF:
                     node_index,
                 )
 
-                # Parent mesh to armature if it has any child bones
-                if obj.data is not None and any(
-                    scene_data.nodes[child_idx].type_id == 1
-                    for child_idx in scene_data.nodes[node_index].child_indexes
-                ):
-                    armature = bpy.data.armatures.new(node.name)
-                    armature_obj = bpy.data.objects.new(node.name, armature)
-                    self.context.collection.objects.link(armature_obj)
-                    armature_indexes.append(node_index)
+                # Replace mesh with armature if it has any child bones
+                if obj.data is not None:
+                    if any(
+                        scene_data.nodes[child_idx].type_id == 1
+                        for child_idx in node.child_indexes
+                    ):
+                        armature = bpy.data.armatures.new(node.name)
+                        armature_obj = bpy.data.objects.new(node.name, armature)
+                        self.context.collection.objects.link(armature_obj)
+                        armature_indexes.append(node_index)
 
-                    modifier = obj.modifiers.new("Armature", "ARMATURE")
-                    modifier.object = armature_obj
+                        modifier = obj.modifiers.new("Armature", "ARMATURE")
+                        modifier.object = armature_obj
 
-                    # Replace mesh reference with armature
-                    obj.parent = armature_obj
-                    obj = armature_obj
+                        # Replace mesh reference with armature
+                        obj.parent = armature_obj
+                        obj = armature_obj
             case 3:
                 obj = self.import_camera_object(node)
             case _:
@@ -220,11 +217,8 @@ class Importer3DF:
         parent_bone: EditBone | None,
     ) -> None:
         node = scene_data.nodes[node_index]
-        if (
-            type(node) is not scene_3df_20.BoneNode3DF
-            and type(node) is not scene_3df_22.BoneNode3DF
-        ):
-            logging.error("Bone node must have type BoneNode3DF")
+        if node.type_id != 1:
+            logging.error("Bone node has unexpected type ID %d", node.type_id)
             return
 
         # Create edit bone

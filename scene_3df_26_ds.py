@@ -2,8 +2,6 @@ from typing import NamedTuple
 
 from .binary_reader import BinaryReader
 
-HEADER_SIZE = 56
-
 
 class Header3DF(NamedTuple):
     compress_mode: int
