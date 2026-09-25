@@ -40,91 +40,7 @@ class SceneData3DF(NamedTuple):
     textures: list[Texture3DF]
 
 
-def read_texture(bs: BinaryReader, has_extra_header: bool = False) -> Texture3DF:
-    flags = bs.read_uint32()
-    type_id = bs.read_uint32()
-    data_offset = bs.read_uint32()
-    width = bs.read_uint32()
-    height = bs.read_uint32()
-    bs.read_uint32()
-    bs.read_uint32()
-    padded_size = bs.read_uint32()
-    tex_info_end = bs.tell()
-
-    bs.seek(data_offset)
-    data_off = bs.read_uint32()
-    data_size = bs.read_uint32()
-    bs.seek(data_off)
-    match type_id:
-        case 0:
-            # 8-bit paletted
-            palette = np.frombuffer(bs.getbuffer(), np.uint8, 1024, bs.tell()).reshape(
-                256, 4
-            )
-            palette = palette[:, [2, 1, 0, 3]]  # Convert BGRA to RGBA
-            bs.seek(palette.nbytes, 1)
-            if has_extra_header:
-                bs.seek(64, 1)
-            indices = np.frombuffer(bs.getbuffer(), np.uint8, width * height, bs.tell())
-            pixels = image_utils.rgba_to_floats(palette[indices])
-        case 3:
-            # 4-bit paletted
-            palette = np.frombuffer(bs.getbuffer(), np.uint8, 64, bs.tell()).reshape(
-                16, 4
-            )
-            palette = palette[:, [2, 1, 0, 3]]  # Convert BGRA to RGBA
-            bs.seek(palette.nbytes, 1)
-            if has_extra_header:
-                bs.seek(64, 1)
-            indices_raw = np.frombuffer(
-                bs.getbuffer(), np.uint8, width * height // 2, bs.tell()
-            )
-            indices = np.empty(indices_raw.size * 2, dtype=np.uint8)
-            indices[0::2] = indices_raw >> 4
-            indices[1::2] = indices_raw & 0xF
-            pixels = image_utils.rgba_to_floats(palette[indices])
-        case 5:
-            # BGR565
-            raw_pixels = np.frombuffer(
-                bs.getbuffer(), np.uint16, width * height, bs.tell()
-            )
-            r = ((raw_pixels >> 11) & 0x1F) * 255 // 0x1F
-            g = ((raw_pixels >> 5) & 0x3F) * 255 // 0x3F
-            b = (raw_pixels & 0x1F) * 255 // 0x1F
-            pixels = np.empty((raw_pixels.size, 4), dtype=np.float32)
-            pixels[:, 0] = b
-            pixels[:, 1] = g
-            pixels[:, 2] = r
-            pixels = image_utils.rgba_to_floats(pixels)
-        case 6:
-            # BGRA4444
-            raw_pixels = np.frombuffer(
-                bs.getbuffer(), np.uint16, width * height, bs.tell()
-            )
-            pixels = np.empty((raw_pixels.size, 4), dtype=np.float32)
-            pixels[:, 0] = ((raw_pixels >> 8) & 0xF) / 15.0
-            pixels[:, 1] = ((raw_pixels >> 4) & 0xF) / 15.0
-            pixels[:, 2] = (raw_pixels & 0xF) / 15.0
-            pixels[:, 3] = ((raw_pixels >> 12) & 0xF) / 15.0
-            pixels = pixels.ravel()
-        case 8:
-            # DXT1
-            pixels = image_utils.dxt1_to_rgba(bs.read(data_size), width, height)
-        case _:
-            logging.error(
-                f"Unimplemented texture type {type_id} with dimensions "
-                f"{width}x{height} at {hex(data_off)} (chunk relative)"
-            )
-            pixels = np.tile([0.0, 0.0, 0.0, 1.0], width * height)
-    bs.seek(tex_info_end)
-    return Texture3DF(
-        width,
-        height,
-        pixels,
-    )
-
-
-def tri_strips_to_triangles(indices: npt.NDArray) -> npt.NDArray:
+def _tri_strips_to_triangles(indices: npt.NDArray) -> npt.NDArray:
     triangles = []
     for i in range(len(indices) - 2):
         if i % 2 == 0:
@@ -136,7 +52,7 @@ def tri_strips_to_triangles(indices: npt.NDArray) -> npt.NDArray:
     return np.asarray(triangles, dtype=np.int64).reshape(-1, 3)
 
 
-def decompress_chunk_stream(bs: BinaryReader) -> BinaryReader:
+def _decompress_chunk_stream(bs: BinaryReader) -> BinaryReader:
     decomp_size = bs.read_uint32()
     comp_size = bs.read_uint32()
     flags = bs.read_uint32()
@@ -158,6 +74,93 @@ class Reader3DF:
     def __init__(self, platform: str) -> None:
         self.platform: str = platform
         self.version: int = 20
+
+    def read_texture(self, bs: BinaryReader) -> Texture3DF:
+        flags = bs.read_uint32()
+        type_id = bs.read_uint32()
+        data_offset = bs.read_uint32()
+        width = bs.read_uint32()
+        height = bs.read_uint32()
+        bs.read_uint32()
+        bs.read_uint32()
+        padded_size = bs.read_uint32()
+        tex_info_end = bs.tell()
+
+        bs.seek(data_offset)
+        data_off = bs.read_uint32()
+        data_size = bs.read_uint32()
+        has_extra_header = self.version == 23
+
+        bs.seek(data_off)
+        match type_id:
+            case 0:
+                # 8-bit paletted
+                palette = np.frombuffer(
+                    bs.getbuffer(), np.uint8, 1024, bs.tell()
+                ).reshape(256, 4)
+                palette = palette[:, [2, 1, 0, 3]]  # Convert BGRA to RGBA
+                bs.seek(palette.nbytes, 1)
+                if has_extra_header:
+                    bs.seek(64, 1)
+                indices = np.frombuffer(
+                    bs.getbuffer(), np.uint8, width * height, bs.tell()
+                )
+                pixels = image_utils.rgba_to_floats(palette[indices])
+            case 3:
+                # 4-bit paletted
+                palette = np.frombuffer(
+                    bs.getbuffer(), np.uint8, 64, bs.tell()
+                ).reshape(16, 4)
+                palette = palette[:, [2, 1, 0, 3]]  # Convert BGRA to RGBA
+                bs.seek(palette.nbytes, 1)
+                if has_extra_header:
+                    bs.seek(64, 1)
+                indices_raw = np.frombuffer(
+                    bs.getbuffer(), np.uint8, width * height // 2, bs.tell()
+                )
+                indices = np.empty(indices_raw.size * 2, dtype=np.uint8)
+                indices[0::2] = indices_raw >> 4
+                indices[1::2] = indices_raw & 0xF
+                pixels = image_utils.rgba_to_floats(palette[indices])
+            case 5:
+                # BGR565
+                raw_pixels = np.frombuffer(
+                    bs.getbuffer(), np.uint16, width * height, bs.tell()
+                )
+                r = ((raw_pixels >> 11) & 0x1F) * 255 // 0x1F
+                g = ((raw_pixels >> 5) & 0x3F) * 255 // 0x3F
+                b = (raw_pixels & 0x1F) * 255 // 0x1F
+                pixels = np.empty((raw_pixels.size, 4), dtype=np.float32)
+                pixels[:, 0] = b
+                pixels[:, 1] = g
+                pixels[:, 2] = r
+                pixels = image_utils.rgba_to_floats(pixels)
+            case 6:
+                # BGRA4444
+                raw_pixels = np.frombuffer(
+                    bs.getbuffer(), np.uint16, width * height, bs.tell()
+                )
+                pixels = np.empty((raw_pixels.size, 4), dtype=np.float32)
+                pixels[:, 0] = ((raw_pixels >> 8) & 0xF) / 15.0
+                pixels[:, 1] = ((raw_pixels >> 4) & 0xF) / 15.0
+                pixels[:, 2] = (raw_pixels & 0xF) / 15.0
+                pixels[:, 3] = ((raw_pixels >> 12) & 0xF) / 15.0
+                pixels = pixels.ravel()
+            case 8:
+                # DXT1
+                pixels = image_utils.dxt1_to_rgba(bs.read(data_size), width, height)
+            case _:
+                logging.error(
+                    f"Unimplemented texture type {type_id} with dimensions "
+                    f"{width}x{height} at {hex(data_off)} (chunk relative)"
+                )
+                pixels = np.tile([0.0, 0.0, 0.0, 1.0], width * height)
+        bs.seek(tex_info_end)
+        return Texture3DF(
+            width,
+            height,
+            pixels,
+        )
 
     def read_scene_from_file(self, f: BufferedReader) -> SceneData3DF:
         # Load header chunk
@@ -207,7 +210,7 @@ class Reader3DF:
         # Load node chunk
         bs = BinaryReader(f.read(header.node_chunk_size))
         if header.compress_mode == 1:
-            bs = decompress_chunk_stream(bs)
+            bs = _decompress_chunk_stream(bs)
 
         # Read materials
         bs.seek(header.material_off - header_size)
@@ -233,7 +236,7 @@ class Reader3DF:
         f.seek(header_size + header.node_chunk_size)
         bs = BinaryReader(f.read(header.mesh_chunk_size))
         if header.compress_mode == 1:
-            bs = decompress_chunk_stream(bs)
+            bs = _decompress_chunk_stream(bs)
 
         # Read mesh info entries
         if self.version == 20:
@@ -289,7 +292,7 @@ class Reader3DF:
                     triangle_groups.append(
                         TriangleGroup3DF(
                             face_group.bone_indexes,
-                            tri_strips_to_triangles(tri_strip_indices),
+                            _tri_strips_to_triangles(tri_strip_indices),
                             vertex_indices,
                             face_group.material_index,
                         )
@@ -323,10 +326,10 @@ class Reader3DF:
         # Load texture chunk
         bs = BinaryReader(f.read(header.texture_chunk_size))
         if header.compress_mode == 1:
-            bs = decompress_chunk_stream(bs)
+            bs = _decompress_chunk_stream(bs)
 
         # Read textures
-        textures: list[Texture3DF] = []
-        for i in range(header.texture_count):
-            textures.append(read_texture(bs, has_extra_header=self.version == 23))
+        textures: list[Texture3DF] = [
+            self.read_texture(bs) for _ in range(header.texture_count)
+        ]
         return SceneData3DF(materials, nodes, mesh_data_map, textures)
