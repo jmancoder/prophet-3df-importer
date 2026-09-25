@@ -42,10 +42,7 @@ def read_node(bs: BinaryReader, header_size: int) -> scene_3df_20.Node3DF:
     if track_count > 0:
         node_end_off = bs.tell()
         bs.seek(track_off - header_size)
-        tracks = [
-            scene_3df_20.read_track(bs, header_size)
-            for _ in range(track_count)
-        ]
+        tracks = [scene_3df_20.read_track(bs, header_size) for _ in range(track_count)]
         bs.seek(node_end_off)
     else:
         tracks = []
@@ -67,15 +64,7 @@ def read_node(bs: BinaryReader, header_size: int) -> scene_3df_20.Node3DF:
                 bs.seek(node_end_off)
             else:
                 face_groups = []
-            return scene_3df_20.MeshNode3DF(
-                name,
-                type_id,
-                flags,
-                internal_idx,
-                child_indexes,
-                transform_type,
-                transform,
-                tracks,
+            data = scene_3df_20.MeshNodeData3DF(
                 vertex_count,
                 face_idx_count,
                 face_groups,
@@ -84,27 +73,21 @@ def read_node(bs: BinaryReader, header_size: int) -> scene_3df_20.Node3DF:
             unk_float = bs.read_float()
             bone_transform = bs.read_matrix_3x4()
             bs.seek(52, 1)
-            return scene_3df_20.BoneNode3DF(
-                name,
-                type_id,
-                flags,
-                internal_idx,
-                child_indexes,
-                transform_type,
-                transform,
-                tracks,
+            data = scene_3df_20.BoneNodeData3DF(
                 unk_float,
                 bone_transform,
             )
         case _:
             bs.seek(104, 1)
-            return scene_3df_20.Node3DF(
-                name,
-                type_id,
-                flags,
-                internal_idx,
-                child_indexes,
-                transform_type,
-                transform,
-                tracks,
-            )
+            data = None
+    return scene_3df_20.Node3DF(
+        name,
+        type_id,
+        flags,
+        internal_idx,
+        child_indexes,
+        transform_type,
+        transform,
+        tracks,
+        data,
+    )

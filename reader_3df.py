@@ -226,21 +226,32 @@ class Reader3DF:
         bs.seek(header.material_off - header_size)
         if self.version == 20:
             materials = [
-                scene_3df_20.read_material(bs, header_size) for _ in range(header.material_count)
+                scene_3df_20.read_material(bs, header_size)
+                for _ in range(header.material_count)
             ]
         else:
             materials = [
-                scene_3df_21.read_material(bs, header_size) for _ in range(header.material_count)
+                scene_3df_21.read_material(bs, header_size)
+                for _ in range(header.material_count)
             ]
 
         # Read nodes
         bs.seek(header.node_off - header_size)
         if self.version == 20:
-            nodes = [scene_3df_20.read_node(bs, header_size) for _ in range(header.node_count)]
+            nodes = [
+                scene_3df_20.read_node(bs, header_size)
+                for _ in range(header.node_count)
+            ]
         elif self.version == 21 or self.version == 22:
-            nodes = [scene_3df_21.read_node(bs, header_size) for _ in range(header.node_count)]
+            nodes = [
+                scene_3df_21.read_node(bs, header_size)
+                for _ in range(header.node_count)
+            ]
         else:
-            nodes = [scene_3df_23.read_node(bs, header_size) for _ in range(header.node_count)]
+            nodes = [
+                scene_3df_23.read_node(bs, header_size)
+                for _ in range(header.node_count)
+            ]
 
         # Load mesh chunk
         f.seek(header_size + header.node_chunk_size)
@@ -267,7 +278,7 @@ class Reader3DF:
         for i, (node, mesh_info) in enumerate(zip(nodes, mesh_info_entries)):
             if node.type_id != 0:
                 continue
-            if node.vertex_count == 0:
+            if node.data.vertex_count == 0:
                 continue
 
             if self.version == 20:
@@ -282,7 +293,7 @@ class Reader3DF:
             vertices = np.frombuffer(
                 bs.getbuffer(),
                 vertex_dtype,
-                node.vertex_count,
+                node.data.vertex_count,
                 bs.tell(),
             )
 
@@ -293,7 +304,7 @@ class Reader3DF:
                 face_dtype = np.uint16
             triangle_groups: list[TriangleGroup3DF] = []
             bs.seek(mesh_info.face_off)
-            for face_group in node.face_groups:
+            for face_group in node.data.face_groups:
                 if face_group.face_type == 1:
                     # Read triangle strips
                     tri_strip_indices = np.frombuffer(

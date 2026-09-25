@@ -164,15 +164,11 @@ class Importer3DF:
     ) -> None:
         node = scene_data.nodes[node_index]
         match node.type_id:
-            case 1:
-                # Skip bones until next pass
-                obj = None
             case 0:
                 obj = self.import_mesh_object(
                     scene_data,
                     node_index,
                 )
-
                 # Replace mesh with armature if it has any child bones
                 if obj.data is not None:
                     if any(
@@ -187,9 +183,11 @@ class Importer3DF:
                         modifier = obj.modifiers.new("Armature", "ARMATURE")
                         modifier.object = armature_obj
 
-                        # Replace mesh reference with armature
                         obj.parent = armature_obj
                         obj = armature_obj
+            case 1:
+                # Skip bones until next pass
+                obj = None
             case 3:
                 obj = self.import_camera_object(node)
             case _:
@@ -227,7 +225,8 @@ class Importer3DF:
         if parent_bone:
             bone.parent = parent_bone
         bone.matrix = (
-            armature_object.matrix_world.inverted() @ node.bone_transform.inverted()
+            armature_object.matrix_world.inverted()
+            @ node.data.bone_transform.inverted()
         )
 
         # Store bone name and armature for next pass

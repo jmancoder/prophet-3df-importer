@@ -1,4 +1,3 @@
-from dataclasses import dataclass
 from typing import NamedTuple
 
 from mathutils import Matrix
@@ -51,8 +50,18 @@ class Track3DF(NamedTuple):
     keys: list[Key3DF]
 
 
-@dataclass(frozen=True, slots=True)
-class Node3DF:
+class MeshNodeData3DF(NamedTuple):
+    vertex_count: int
+    face_idx_count: int
+    face_groups: list[FaceGroup3DF]
+
+
+class BoneNodeData3DF(NamedTuple):
+    unk_float: float
+    bone_transform: Matrix
+
+
+class Node3DF(NamedTuple):
     name: str
     type_id: int
     flags: int
@@ -61,19 +70,7 @@ class Node3DF:
     transform_type: int
     transform: Matrix
     tracks: list[Track3DF]
-
-
-@dataclass(frozen=True, slots=True)
-class BoneNode3DF(Node3DF):
-    unk_float: float
-    bone_transform: Matrix
-
-
-@dataclass(frozen=True, slots=True)
-class MeshNode3DF(Node3DF):
-    vertex_count: int
-    face_idx_count: int
-    face_groups: list[FaceGroup3DF]
+    data: MeshNodeData3DF | BoneNodeData3DF | None
 
 
 class MeshInfo3DF(NamedTuple):
@@ -277,13 +274,13 @@ def read_node(bs: BinaryReader, header_size: int) -> Node3DF:
     else:
         tracks = []
 
+    # Read node data
     match type_id:
         case 0:
             vertex_count = bs.read_uint32()
             face_idx_count = bs.read_uint32()
             face_group_count = bs.read_uint32()
             bs.seek(92, 1)
-
             # Read face groups
             if face_group_off > 0:
                 node_end_off = bs.tell()
@@ -292,15 +289,7 @@ def read_node(bs: BinaryReader, header_size: int) -> Node3DF:
                 bs.seek(node_end_off)
             else:
                 face_groups = []
-            return MeshNode3DF(
-                name,
-                type_id,
-                flags,
-                internal_idx,
-                child_indexes,
-                transform_type,
-                transform,
-                tracks,
+            data = MeshNodeData3DF(
                 vertex_count,
                 face_idx_count,
                 face_groups,
@@ -309,30 +298,24 @@ def read_node(bs: BinaryReader, header_size: int) -> Node3DF:
             unk_float = bs.read_float()
             bone_transform = bs.read_matrix_3x4()
             bs.seek(52, 1)
-            return BoneNode3DF(
-                name,
-                type_id,
-                flags,
-                internal_idx,
-                child_indexes,
-                transform_type,
-                transform,
-                tracks,
+            data = BoneNodeData3DF(
                 unk_float,
                 bone_transform,
             )
         case _:
             bs.seek(104, 1)
-            return Node3DF(
-                name,
-                type_id,
-                flags,
-                internal_idx,
-                child_indexes,
-                transform_type,
-                transform,
-                tracks,
-            )
+            data = None
+    return Node3DF(
+        name,
+        type_id,
+        flags,
+        internal_idx,
+        child_indexes,
+        transform_type,
+        transform,
+        tracks,
+        data,
+    )
 
 
 def read_mesh_info(bs: BinaryReader) -> MeshInfo3DF:
